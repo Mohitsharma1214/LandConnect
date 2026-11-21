@@ -1647,9 +1647,10 @@ function updateFloatingTypingUI() {
     if (floatingAvatar) {
       floatingAvatar.src = activeChatPeer.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(activeChatPeer.name)}&background=075E54&color=fff`;
     }
+    const wasHidden = floatingEl.classList.contains('hidden');
     floatingEl.classList.remove('hidden');
     const container = document.getElementById('chat-messages-container');
-    if (container && (container.scrollHeight - container.scrollTop - container.clientHeight < 120)) {
+    if (container && wasHidden) {
       container.scrollTop = container.scrollHeight;
     }
   } else {
