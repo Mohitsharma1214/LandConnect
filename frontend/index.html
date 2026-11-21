@@ -854,60 +854,60 @@
     <!-- ================= MULTI-PARTY VIRTUAL MEETING ROOM MODAL ================= -->
     <div id="meeting-room-modal" class="hidden absolute inset-0 bg-slate-950 flex flex-col z-50 text-white select-none">
       <!-- Top Bar -->
-      <div class="p-3 bg-black/60 backdrop-blur-md border-b border-white/10 flex items-center justify-between">
-        <div class="flex items-center gap-2.5">
-          <div class="p-1.5 rounded-lg bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+      <div class="px-3.5 py-2.5 bg-black/60 backdrop-blur-md border-b border-white/10 flex items-center justify-between gap-2 shrink-0 z-20">
+        <div class="flex items-center gap-2.5 min-w-0">
+          <div class="w-8 h-8 rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center justify-center shrink-0">
             <i data-lucide="video" class="w-4 h-4"></i>
           </div>
-          <div>
+          <div class="min-w-0">
             <div class="flex items-center gap-2">
-              <h3 class="font-bold text-xs text-white">LandConnect Deal Room</h3>
-              <span id="meeting-room-badge" class="font-mono text-[10px] bg-white/10 px-1.5 py-0.5 rounded text-emerald-300 border border-white/10">room</span>
+              <h3 class="font-bold text-xs text-white truncate">Deal Room</h3>
+              <span id="meeting-participant-count" class="text-[10px] bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded-full font-bold border border-emerald-500/30 shrink-0">1 in room</span>
             </div>
-            <p id="meeting-participant-count" class="text-[10px] text-slate-400">1 participant connected</p>
+            <p id="meeting-room-badge" class="font-mono text-[10px] text-slate-400 truncate max-w-[150px]">room</p>
           </div>
         </div>
 
-        <div class="flex items-center gap-1.5">
-          <button onclick="copyMeetingLink()" id="btn-copy-meeting-link" class="bg-white/10 hover:bg-white/20 text-white px-2.5 py-1.5 rounded-xl text-[11px] font-semibold flex items-center gap-1.5 transition border border-white/10">
+        <div class="flex items-center gap-1.5 shrink-0">
+          <button onclick="copyMeetingLink()" id="btn-copy-meeting-link" class="bg-white/10 hover:bg-white/20 active:scale-95 text-white px-2.5 py-1.5 rounded-xl text-[11px] font-semibold flex items-center gap-1.5 transition border border-white/10">
             <i data-lucide="copy" class="w-3.5 h-3.5"></i>
-            <span id="copy-meeting-link-text">Copy Link</span>
+            <span id="copy-meeting-link-text" class="whitespace-nowrap">Copy Link</span>
           </button>
-          <button onclick="openMeetingInviteDrawer()" class="bg-emerald-600 hover:bg-emerald-700 text-white px-2.5 py-1.5 rounded-xl text-[11px] font-bold flex items-center gap-1.5 transition shadow">
-            <i data-lucide="user-plus" class="w-3.5 h-3.5"></i>
-            <span>+ Invite</span>
+          <button onclick="openMeetingInviteDrawer()" class="bg-wa-green hover:bg-emerald-400 active:scale-95 text-wa-tealDark px-3 py-1.5 rounded-xl text-[11px] font-extrabold flex items-center gap-1.5 transition shadow">
+            <i data-lucide="user-plus" class="w-3.5 h-3.5 stroke-[2.5]"></i>
+            <span class="whitespace-nowrap">Invite</span>
           </button>
         </div>
       </div>
 
-      <!-- Center Dynamic Video Grid -->
-      <div class="flex-1 bg-slate-900 relative overflow-hidden flex flex-col p-2">
-        <div id="meeting-video-grid" class="flex-1 grid grid-cols-1 md:grid-cols-2 gap-2 w-full h-full overflow-y-auto content-center">
+      <!-- Center Dynamic Video Grid (Fills full height & width) -->
+      <div class="flex-1 bg-slate-950 relative overflow-hidden flex flex-col p-2 min-h-0">
+        <div id="meeting-video-grid" class="flex-1 w-full h-full min-h-0 grid grid-cols-1 grid-rows-1 gap-2 overflow-hidden">
           <!-- Local User Tile -->
-          <div id="meeting-tile-local" class="meeting-tile relative bg-slate-800 rounded-2xl overflow-hidden border border-white/10 shadow-lg flex items-center justify-center min-h-[180px] max-h-[50vh]">
+          <div id="meeting-tile-local" class="meeting-tile relative bg-slate-900 rounded-2xl overflow-hidden border border-white/10 shadow-lg flex items-center justify-center w-full h-full min-h-0 transition-all duration-300">
             <video id="meeting-local-video" autoplay playsinline muted class="w-full h-full object-cover"></video>
             
-            <div id="meeting-local-avatar-fallback" class="hidden absolute inset-0 bg-slate-800 flex flex-col items-center justify-center">
-              <img id="meeting-local-avatar" src="" class="w-16 h-16 rounded-full border-2 border-emerald-400 object-cover shadow-lg mb-1.5">
+            <div id="meeting-local-avatar-fallback" class="hidden absolute inset-0 bg-slate-900 flex flex-col items-center justify-center">
+              <img id="meeting-local-avatar" src="" class="w-20 h-20 rounded-full border-2 border-emerald-400 object-cover shadow-xl mb-2">
               <span class="text-xs text-slate-300 font-semibold">Camera Off</span>
             </div>
 
             <!-- Bottom Left Name Badge -->
-            <div class="absolute bottom-2 left-2 bg-black/60 backdrop-blur-md px-2.5 py-1 rounded-lg text-xs font-semibold flex items-center gap-1.5 border border-white/10 text-white">
+            <div class="absolute bottom-2.5 left-2.5 bg-black/60 backdrop-blur-md px-2.5 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 border border-white/15 text-white shadow-md">
               <span id="meeting-local-name">You</span>
-              <span id="meeting-local-role" class="text-[9px] px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 uppercase font-bold">Buyer</span>
+              <span id="meeting-local-role" class="text-[9px] px-1.5 py-0.5 rounded font-bold uppercase tracking-wider bg-emerald-500/20 text-emerald-300 border border-emerald-400/30">Buyer</span>
             </div>
 
             <!-- Top Right Mic Status -->
-            <div id="meeting-local-mic-badge" class="absolute top-2 right-2 p-1 rounded-full bg-black/60 text-emerald-400">
-              <i data-lucide="mic" class="w-3 h-3"></i>
+            <div id="meeting-local-mic-badge" class="absolute top-2.5 right-2.5 p-1.5 rounded-full bg-black/60 backdrop-blur-md text-emerald-400 border border-white/10 shadow">
+              <i data-lucide="mic" class="w-3.5 h-3.5"></i>
             </div>
           </div>
           <!-- Remote tiles will be dynamically injected here: meeting-tile-${peerId} -->
         </div>
 
         <!-- Waiting banner when only 1 user in room -->
-        <div id="meeting-waiting-banner" class="mt-2 bg-white/5 border border-white/10 rounded-xl p-2.5 flex items-center justify-between text-xs">
+        <div id="meeting-waiting-banner" class="mt-2 bg-white/5 border border-white/10 rounded-xl p-2.5 flex items-center justify-between text-xs shrink-0">
           <div class="flex items-center gap-2 text-slate-300 text-[11px]">
             <i data-lucide="info" class="w-4 h-4 text-emerald-400 shrink-0"></i>
             <span>Waiting for buyer, seller or broker to join...</span>
@@ -919,20 +919,20 @@
       </div>
 
       <!-- Bottom Control Bar -->
-      <div class="p-4 bg-slate-950/95 backdrop-blur-md flex items-center justify-center gap-3 border-t border-white/10">
-        <button id="btn-meeting-mic" onclick="toggleMeetingMic()" class="p-3 rounded-full bg-white/10 hover:bg-white/20 text-white transition" title="Toggle Mic">
+      <div class="p-3 pb-5 bg-gradient-to-t from-black via-slate-950/90 to-transparent flex items-center justify-center gap-3.5 border-t border-white/10 shrink-0 z-20">
+        <button id="btn-meeting-mic" onclick="toggleMeetingMic()" class="w-12 h-12 rounded-full bg-white/10 hover:bg-white/20 active:scale-95 text-white flex items-center justify-center transition border border-white/10 shadow-md" title="Toggle Mic">
           <i data-lucide="mic" id="meeting-icon-mic" class="w-5 h-5"></i>
         </button>
-        <button id="btn-meeting-cam" onclick="toggleMeetingCam()" class="p-3 rounded-full bg-white/10 hover:bg-white/20 text-white transition" title="Toggle Camera">
+        <button id="btn-meeting-cam" onclick="toggleMeetingCam()" class="w-12 h-12 rounded-full bg-white/10 hover:bg-white/20 active:scale-95 text-white flex items-center justify-center transition border border-white/10 shadow-md" title="Toggle Camera">
           <i data-lucide="video" id="meeting-icon-cam" class="w-5 h-5"></i>
         </button>
-        <button id="btn-meeting-screen" onclick="toggleMeetingScreenShare()" class="p-3 rounded-full bg-white/10 hover:bg-white/20 text-white transition" title="Share Screen / Land Deeds">
+        <button id="btn-meeting-screen" onclick="toggleMeetingScreenShare()" class="w-12 h-12 rounded-full bg-white/10 hover:bg-white/20 active:scale-95 text-white flex items-center justify-center transition border border-white/10 shadow-md" title="Share Screen / Land Deeds">
           <i data-lucide="monitor" class="w-5 h-5"></i>
         </button>
-        <button onclick="openMeetingInviteDrawer()" class="p-3 rounded-full bg-white/10 hover:bg-white/20 text-white transition" title="Invite Contacts">
+        <button onclick="openMeetingInviteDrawer()" class="w-12 h-12 rounded-full bg-white/10 hover:bg-white/20 active:scale-95 text-white flex items-center justify-center transition border border-white/10 shadow-md" title="Invite Contacts">
           <i data-lucide="user-plus" class="w-5 h-5"></i>
         </button>
-        <button onclick="leaveMeetingRoom()" class="p-3.5 rounded-full bg-rose-600 hover:bg-rose-700 text-white shadow-xl transition transform hover:scale-105 active:scale-95" title="Leave Meeting Room">
+        <button onclick="leaveMeetingRoom()" class="w-12 h-12 rounded-full bg-rose-600 hover:bg-rose-700 active:scale-95 text-white flex items-center justify-center shadow-lg shadow-rose-900/40 transition transform hover:scale-105" title="Leave Meeting Room">
           <i data-lucide="phone-off" class="w-5 h-5"></i>
         </button>
       </div>

@@ -3636,30 +3636,38 @@ function renderMeetingPeerTile(peerId, info) {
 
   tile = document.createElement('div');
   tile.id = `meeting-tile-${peerId}`;
-  tile.className = 'meeting-peer-tile relative bg-slate-800 rounded-2xl overflow-hidden border border-white/10 shadow-lg flex items-center justify-center min-h-[180px] max-h-[50vh] transition-all duration-300';
+  tile.className = 'meeting-peer-tile relative bg-slate-900 rounded-2xl overflow-hidden border border-white/10 shadow-lg flex items-center justify-center w-full h-full min-h-0 transition-all duration-300';
 
   const avatarUrl = info.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(info.name || 'User')}&background=075E54&color=fff`;
+  const roleLower = (info.role || 'Member').toLowerCase();
   const roleName = (info.role || 'Member').toUpperCase();
+
+  const roleStyles = {
+    buyer: 'bg-blue-500/20 text-blue-300 border-blue-400/30',
+    seller: 'bg-emerald-500/20 text-emerald-300 border-emerald-400/30',
+    broker: 'bg-purple-500/20 text-purple-300 border-purple-400/30'
+  };
+  const roleBadgeStyle = roleStyles[roleLower] || 'bg-slate-500/20 text-slate-300 border-slate-400/30';
 
   tile.innerHTML = `
     <video id="meeting-video-${peerId}" autoplay playsinline class="w-full h-full object-cover"></video>
     <audio id="meeting-audio-${peerId}" autoplay></audio>
     
-    <div id="meeting-avatar-fallback-${peerId}" class="absolute inset-0 bg-slate-800 flex flex-col items-center justify-center">
-      <img src="${avatarUrl}" class="w-16 h-16 rounded-full border-2 border-emerald-400 object-cover shadow-lg mb-1.5 animate-pulse">
-      <span class="text-xs text-slate-300 font-semibold">${info.name || 'Participant'}</span>
-      <span class="text-[10px] text-emerald-400">Connecting video...</span>
+    <div id="meeting-avatar-fallback-${peerId}" class="absolute inset-0 bg-slate-900 flex flex-col items-center justify-center">
+      <img src="${avatarUrl}" class="w-20 h-20 rounded-full border-2 border-emerald-400 object-cover shadow-xl mb-2 animate-pulse">
+      <span class="text-xs text-white font-bold">${info.name || 'Participant'}</span>
+      <span class="text-[10px] text-emerald-400 mt-0.5">Connecting video stream...</span>
     </div>
 
     <!-- Bottom Left Badge -->
-    <div class="absolute bottom-2 left-2 bg-black/60 backdrop-blur-md px-2.5 py-1 rounded-lg text-xs font-semibold flex items-center gap-1.5 border border-white/10 text-white">
-      <span>${info.name || 'Participant'}</span>
-      <span class="text-[9px] px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 uppercase font-bold">${roleName}</span>
+    <div class="absolute bottom-2.5 left-2.5 bg-black/60 backdrop-blur-md px-2.5 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 border border-white/15 text-white shadow-md">
+      <span class="truncate max-w-[110px]">${info.name || 'Participant'}</span>
+      <span class="text-[9px] px-1.5 py-0.5 rounded font-bold uppercase tracking-wider border ${roleBadgeStyle}">${roleName}</span>
     </div>
 
     <!-- Top Right Mic Status -->
-    <div class="absolute top-2 right-2 p-1 rounded-full bg-black/60 text-emerald-400">
-      <i data-lucide="mic" class="w-3 h-3"></i>
+    <div class="absolute top-2.5 right-2.5 p-1.5 rounded-full bg-black/60 backdrop-blur-md text-emerald-400 border border-white/10 shadow">
+      <i data-lucide="mic" class="w-3.5 h-3.5"></i>
     </div>
   `;
 
@@ -3687,12 +3695,14 @@ function removeMeetingPeer(peerId) {
 }
 
 function updateMeetingParticipantCount() {
-  const count = 1 + meetingPeerConnections.size;
+  const grid = document.getElementById('meeting-video-grid');
+  const tiles = grid ? grid.querySelectorAll('.meeting-tile, .meeting-peer-tile') : [];
+  const count = tiles.length || 1;
   const countEl = document.getElementById('meeting-participant-count');
   const banner = document.getElementById('meeting-waiting-banner');
 
   if (countEl) {
-    countEl.textContent = `${count} participant${count > 1 ? 's' : ''} connected`;
+    countEl.textContent = `${count} in room`;
   }
   if (banner) {
     if (count > 1) {
@@ -3706,15 +3716,36 @@ function updateMeetingParticipantCount() {
 function adjustMeetingGridCols() {
   const grid = document.getElementById('meeting-video-grid');
   if (!grid) return;
-  const count = 1 + meetingPeerConnections.size;
-  grid.classList.remove('grid-cols-1', 'grid-cols-2', 'grid-cols-3', 'md:grid-cols-2');
+  const tiles = Array.from(grid.querySelectorAll('.meeting-tile, .meeting-peer-tile'));
+  const count = tiles.length;
+
+  // Reset grid and span classes
+  grid.className = 'flex-1 w-full h-full min-h-0 grid gap-2.5 p-2 overflow-hidden';
+  tiles.forEach(t => {
+    t.classList.remove('col-span-2', 'col-span-1', 'row-span-1', 'row-span-2');
+  });
 
   if (count <= 1) {
-    grid.classList.add('grid-cols-1');
+    grid.classList.add('grid-cols-1', 'grid-rows-1');
+    if (tiles[0]) tiles[0].classList.add('col-span-1', 'row-span-1');
   } else if (count === 2) {
-    grid.classList.add('grid-cols-1', 'md:grid-cols-2');
+    // 2 participants: stack vertically to fill mobile viewport
+    grid.classList.add('grid-cols-1', 'grid-rows-2');
+    tiles.forEach(t => t.classList.add('col-span-1', 'row-span-1'));
+  } else if (count === 3) {
+    // 3 participants: Top tile spans full width (50% height), bottom 2 tiles are side-by-side (50% height)
+    grid.classList.add('grid-cols-2', 'grid-rows-2');
+    if (tiles[0]) tiles[0].classList.add('col-span-2', 'row-span-1');
+    if (tiles[1]) tiles[1].classList.add('col-span-1', 'row-span-1');
+    if (tiles[2]) tiles[2].classList.add('col-span-1', 'row-span-1');
+  } else if (count === 4) {
+    // 4 participants: 2x2 grid
+    grid.classList.add('grid-cols-2', 'grid-rows-2');
+    tiles.forEach(t => t.classList.add('col-span-1', 'row-span-1'));
   } else {
-    grid.classList.add('grid-cols-2');
+    // 5+ participants: 2 columns, 3 rows
+    grid.classList.add('grid-cols-2', 'grid-rows-3');
+    tiles.forEach(t => t.classList.add('col-span-1', 'row-span-1'));
   }
 }
 
