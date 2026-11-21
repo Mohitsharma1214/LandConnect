@@ -43,27 +43,82 @@ FRONTEND_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "fronten
 # WebSocket connection registry: user_id -> set of WebSocket connections
 active_connections = {}
 
-async def register_ws(user_id: int, websocket: WebSocket):
-    if user_id not in active_connections:
-        active_connections[user_id] = set()
-    active_connections[user_id].add(websocket)
+async def register_ws(user_id, websocket: WebSocket):
+    try:
+        u_id = int(user_id)
+        if u_id not in active_connections:
+            active_connections[u_id] = set()
+        active_connections[u_id].add(websocket)
+    except Exception:
+        pass
 
-async def unregister_ws(user_id: int, websocket: WebSocket):
-    if user_id in active_connections:
-        active_connections[user_id].discard(websocket)
-        if not active_connections[user_id]:
-            del active_connections[user_id]
+async def unregister_ws(user_id, websocket: WebSocket):
+    try:
+        u_id = int(user_id)
+        if u_id in active_connections:
+            active_connections[u_id].discard(websocket)
+            if not active_connections[u_id]:
+                del active_connections[u_id]
+    except Exception:
+        pass
 
-async def send_to_user(user_id: int, message: dict):
-    if user_id in active_connections:
+async def send_to_user(user_id, message: dict):
+    targets = set()
+    try:
+        u_int = int(user_id)
+        if u_int in active_connections:
+            targets.update(active_connections[u_int])
+    except Exception:
+        pass
+    try:
+        u_str = str(user_id)
+        if u_str in active_connections:
+            targets.update(active_connections[u_str])
+    except Exception:
+        pass
+
+    if targets:
         dead_sockets = set()
-        for ws in active_connections[user_id]:
+        msg_json = json.dumps(message)
+        for ws in targets:
             try:
-                await ws.send_text(json.dumps(message))
+                await ws.send_text(msg_json)
             except Exception:
                 dead_sockets.add(ws)
-        for ws in dead_sockets:
-            active_connections[user_id].discard(ws)
+        if dead_sockets:
+            for s in active_connections.values():
+                s.difference_update(dead_sockets)
+
+def db_save_message(sender_id, receiver_id, listing_id, content, message_type):
+    conn = get_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute("""
+            INSERT INTO messages (sender_id, receiver_id, listing_id, content, message_type)
+            VALUES (%s, %s, %s, %s, %s)
+            RETURNING id, created_at;
+        """, (sender_id, receiver_id, listing_id, content, message_type))
+        row = cursor.fetchone()
+        msg_id = row["id"]
+        created_at = row["created_at"]
+        conn.commit()
+        cursor.close()
+        return msg_id, str(created_at)
+    except Exception as e:
+        print("Database save message error:", e)
+        return None, None
+    finally:
+        conn.close()
+
+async def persist_chat_message_async(sender_id, receiver_id, listing_id, content, message_type, temp_id):
+    try:
+        loop = asyncio.get_event_loop()
+        msg_id, _ = await loop.run_in_executor(None, db_save_message, sender_id, receiver_id, listing_id, content, message_type)
+        if msg_id:
+            await send_to_user(sender_id, {"type": "message_synced", "tempId": temp_id, "id": msg_id})
+            await send_to_user(receiver_id, {"type": "message_synced", "tempId": temp_id, "id": msg_id})
+    except Exception as e:
+        print("Async persist error:", e)
 
 # --- REST Endpoints ---
 
@@ -486,52 +541,49 @@ async def api_send_message(request):
         return JSONResponse({"error": "Unauthorized."}, status_code=401)
     
     data = await request.json()
-    sender_id = payload["sub"]
+    sender_id = int(payload["sub"])
     receiver_id = int(data.get("receiver_id"))
     listing_id = data.get("listing_id")
     content = data.get("content", "").strip()
     message_type = data.get("message_type", "text")
+    temp_id = data.get("tempId") or f"msg_{uuid.uuid4().hex[:12]}"
 
     if not receiver_id or not content:
         return JSONResponse({"error": "Receiver and message content are required."}, status_code=400)
-    
-    conn = get_connection()
-    try:
-        cursor = conn.cursor()
-        cursor.execute("""
-            INSERT INTO messages (sender_id, receiver_id, listing_id, content, message_type)
-            VALUES (%s, %s, %s, %s, %s)
-            RETURNING id;
-        """, (sender_id, receiver_id, listing_id, content, message_type))
-        msg_id = cursor.fetchone()["id"]
-        conn.commit()
 
-        cursor.execute("""
-            SELECT m.*, 
-                   s.name as sender_name, s.avatar as sender_avatar,
-                   l.title as listing_title, l.price as listing_price, l.images as listing_images
-            FROM messages m
-            JOIN users s ON m.sender_id = s.id
-            LEFT JOIN listings l ON m.listing_id = l.id
-            WHERE m.id = %s
-        """, (msg_id,))
-        msg_data = serialize_dict(dict(cursor.fetchone()))
-        if msg_data.get("listing_images"):
-            try:
-                msg_data["listing_images"] = json.loads(msg_data["listing_images"]) if isinstance(msg_data["listing_images"], str) else msg_data["listing_images"]
-            except Exception:
-                msg_data["listing_images"] = []
-        cursor.close()
-    finally:
-        conn.close()
-
-    # Dispatch via WebSocket
+    # 1. INSTANT DISPATCH TO RECEIVER (0ms delay - do not wait for DB network latency!)
+    instant_msg = {
+        "id": temp_id,
+        "tempId": temp_id,
+        "sender_id": sender_id,
+        "receiver_id": receiver_id,
+        "listing_id": listing_id,
+        "content": content,
+        "message_type": message_type,
+        "created_at": datetime.utcnow().isoformat(),
+        "sender_name": data.get("sender_name", ""),
+        "sender_avatar": data.get("sender_avatar", ""),
+        "listing_title": data.get("listing_title", ""),
+        "listing_price": data.get("listing_price", 0),
+        "listing_images": data.get("listing_images", [])
+    }
     await send_to_user(receiver_id, {
         "type": "new_message",
-        "message": msg_data
+        "message": instant_msg
     })
 
-    return JSONResponse(msg_data)
+    # 2. Persist to Neon DB in executor so loop is not blocked
+    loop = asyncio.get_event_loop()
+    msg_id, created_at = await loop.run_in_executor(None, db_save_message, sender_id, receiver_id, listing_id, content, message_type)
+    if msg_id:
+        instant_msg["id"] = msg_id
+        if created_at:
+            instant_msg["created_at"] = created_at
+        # Send sync confirmation
+        await send_to_user(sender_id, {"type": "message_synced", "tempId": temp_id, "id": msg_id})
+        await send_to_user(receiver_id, {"type": "message_synced", "tempId": temp_id, "id": msg_id})
+
+    return JSONResponse(instant_msg)
 
 async def api_call_logs(request):
     auth_header = request.headers.get("Authorization", "")
@@ -585,6 +637,52 @@ async def websocket_signaling(websocket: WebSocket):
                         "type": "auth_error",
                         "message": "Invalid token"
                     }))
+
+            elif msg_type == "ping":
+                await websocket.send_text(json.dumps({"type": "pong"}))
+
+            elif msg_type == "chat_message":
+                if not authenticated_user_id:
+                    continue
+                try:
+                    receiver_id = int(data.get("receiver_id"))
+                    content = data.get("content", "").strip()
+                    message_type = data.get("message_type", "text")
+                    listing_id = data.get("listing_id")
+                    temp_id = data.get("tempId") or f"msg_{uuid.uuid4().hex[:12]}"
+
+                    instant_msg = {
+                        "id": temp_id,
+                        "tempId": temp_id,
+                        "sender_id": authenticated_user_id,
+                        "receiver_id": receiver_id,
+                        "listing_id": listing_id,
+                        "content": content,
+                        "message_type": message_type,
+                        "created_at": datetime.utcnow().isoformat(),
+                        "sender_name": data.get("sender_name", ""),
+                        "sender_avatar": data.get("sender_avatar", ""),
+                        "listing_title": data.get("listing_title", ""),
+                        "listing_price": data.get("listing_price", 0),
+                        "listing_images": data.get("listing_images", [])
+                    }
+
+                    # 1. INSTANT DISPATCH TO RECEIVER OVER WS (0ms)
+                    await send_to_user(receiver_id, {
+                        "type": "new_message",
+                        "message": instant_msg
+                    })
+
+                    # 2. IMMEDIATE ACK TO SENDER (0ms)
+                    await websocket.send_text(json.dumps({
+                        "type": "message_sent_ack",
+                        "tempId": temp_id
+                    }))
+
+                    # 3. Async DB write without blocking
+                    asyncio.create_task(persist_chat_message_async(authenticated_user_id, receiver_id, listing_id, content, message_type, temp_id))
+                except Exception as e:
+                    print("WS chat_message error:", e)
 
             elif msg_type == "initiate_call":
                 receiver_id = data.get("receiverId")

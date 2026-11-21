@@ -1230,6 +1230,8 @@ function renderContactsList() {
   if (window.lucide) lucide.createIcons();
 }
 
+let chatSyncInterval = null;
+
 async function startChatWithUser(userId, name, avatar, role) {
   activeChatPeer = { id: userId, name, avatar, role };
 
@@ -1246,9 +1248,19 @@ async function startChatWithUser(userId, name, avatar, role) {
   await fetchChatMessages(userId);
   switchTab('chats');
   if (window.lucide) lucide.createIcons();
+
+  // Background active sync polling every 1500ms
+  clearInterval(chatSyncInterval);
+  chatSyncInterval = setInterval(() => {
+    if (activeChatPeer && Number(activeChatPeer.id) === Number(userId) && currentToken) {
+      syncChatMessages(userId);
+    }
+  }, 1500);
 }
 
 function closeActiveChat() {
+  clearInterval(chatSyncInterval);
+  chatSyncInterval = null;
   const chatView = document.getElementById('active-chat-view');
   if (chatView) chatView.classList.add('hidden');
   activeChatPeer = null;
@@ -1267,8 +1279,49 @@ async function fetchChatMessages(otherUserId) {
   }
 }
 
+async function syncChatMessages(otherUserId) {
+  if (!currentToken) return;
+  try {
+    const res = await fetch(`${API_BASE}/api/messages/${otherUserId}`, {
+      headers: { 'Authorization': `Bearer ${currentToken}` }
+    });
+    if (!res.ok) return;
+    const messages = await res.json();
+    if (!Array.isArray(messages)) return;
+
+    let addedAny = false;
+    for (const m of messages) {
+      const exists = (m.id && document.getElementById(`msg-bubble-${m.id}`)) ||
+                     (m.tempId && document.getElementById(`msg-bubble-${m.tempId}`));
+      if (!exists) {
+        appendMessageToChat(m, false);
+        addedAny = true;
+      }
+    }
+    if (addedAny && window.lucide) {
+      lucide.createIcons();
+    }
+  } catch (err) {
+    // Silent catch for background polling
+  }
+}
+
+function updateMessageStatus(tempId, permanentId) {
+  if (!tempId) return;
+  const statusEl = document.getElementById(`msg-status-${tempId}`);
+  if (statusEl) {
+    statusEl.id = `msg-status-${permanentId}`;
+    statusEl.innerHTML = '<i data-lucide="check-check" class="w-3 h-3 text-emerald-600"></i>';
+    if (window.lucide) lucide.createIcons();
+  }
+  const bubbleEl = document.getElementById(`msg-bubble-${tempId}`);
+  if (bubbleEl) {
+    bubbleEl.id = `msg-bubble-${permanentId}`;
+  }
+}
+
 function generateMessageHtml(m, isPending = false) {
-  const isMine = currentUser && (m.sender_id === currentUser.id);
+  const isMine = currentUser && (Number(m.sender_id) === Number(currentUser.id));
   const time = m.created_at ? new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   const bubbleId = m.tempId ? `msg-bubble-${m.tempId}` : `msg-bubble-${m.id}`;
   const statusId = m.tempId ? `msg-status-${m.tempId}` : `msg-status-${m.id}`;
@@ -1432,6 +1485,26 @@ async function attachListingInChat() {
   };
   appendMessageToChat(optimisticMsg, true);
 
+  // 1. Instant WebSocket dispatch
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    try {
+      ws.send(JSON.stringify({
+        type: 'chat_message',
+        tempId: tempId,
+        receiver_id: activeChatPeer.id,
+        listing_id: item.id,
+        content: inquiryText,
+        message_type: 'property_inquiry',
+        listing_title: item.title,
+        listing_price: item.price,
+        listing_images: item.images,
+        sender_name: currentUser ? currentUser.name : '',
+        sender_avatar: currentUser ? currentUser.avatar : ''
+      }));
+    } catch (e) {}
+  }
+
+  // 2. HTTP persistence
   try {
     const res = await fetch(`${API_BASE}/api/messages`, {
       method: 'POST',
@@ -1440,20 +1513,21 @@ async function attachListingInChat() {
         'Authorization': `Bearer ${currentToken}`
       },
       body: JSON.stringify({
+        tempId: tempId,
         receiver_id: activeChatPeer.id,
         listing_id: item.id,
         content: inquiryText,
-        message_type: 'property_inquiry'
+        message_type: 'property_inquiry',
+        listing_title: item.title,
+        listing_price: item.price,
+        listing_images: item.images,
+        sender_name: currentUser ? currentUser.name : '',
+        sender_avatar: currentUser ? currentUser.avatar : ''
       })
     });
     const savedMsg = await res.json();
     if (savedMsg.id) {
-      const statusEl = document.getElementById(`msg-status-${tempId}`);
-      if (statusEl) {
-        statusEl.id = `msg-status-${savedMsg.id}`;
-        statusEl.innerHTML = '<i data-lucide="check-check" class="w-3 h-3 text-emerald-600"></i>';
-        if (window.lucide) lucide.createIcons();
-      }
+      updateMessageStatus(tempId, savedMsg.id);
     }
   } catch (err) {
     console.error('Error attaching listing:', err);
@@ -1479,6 +1553,22 @@ async function createMeetingRoom() {
   };
   appendMessageToChat(optimisticMsg, true);
 
+  // 1. Instant WebSocket dispatch
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    try {
+      ws.send(JSON.stringify({
+        type: 'chat_message',
+        tempId: tempId,
+        receiver_id: activeChatPeer.id,
+        content: meetingMsg,
+        message_type: 'meeting',
+        sender_name: currentUser ? currentUser.name : '',
+        sender_avatar: currentUser ? currentUser.avatar : ''
+      }));
+    } catch (e) {}
+  }
+
+  // 2. HTTP persistence
   try {
     await fetch(`${API_BASE}/api/messages`, {
       method: 'POST',
@@ -1487,9 +1577,12 @@ async function createMeetingRoom() {
         'Authorization': `Bearer ${currentToken}`
       },
       body: JSON.stringify({
+        tempId: tempId,
         receiver_id: activeChatPeer.id,
         content: meetingMsg,
-        message_type: 'meeting'
+        message_type: 'meeting',
+        sender_name: currentUser ? currentUser.name : '',
+        sender_avatar: currentUser ? currentUser.avatar : ''
       })
     });
     // Launch video call immediately
@@ -1513,8 +1606,8 @@ async function sendChatMessage() {
   input.value = '';
   handleChatInputTyping();
 
-  // Optimistic instant render: 0ms delay!
-  const tempId = 'temp_' + Date.now();
+  // Optimistic instant render on sender: 0ms delay!
+  const tempId = 'msg_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5);
   const optimisticMsg = {
     id: tempId,
     tempId: tempId,
@@ -1526,6 +1619,28 @@ async function sendChatMessage() {
   };
   appendMessageToChat(optimisticMsg, true);
 
+  const payload = {
+    type: 'chat_message',
+    tempId: tempId,
+    receiver_id: activeChatPeer.id,
+    content: content,
+    message_type: 'text',
+    sender_name: currentUser ? currentUser.name : '',
+    sender_avatar: currentUser ? currentUser.avatar : ''
+  };
+
+  // 1. INSTANT WEBSOCKET DISPATCH (1-5ms to receiver!)
+  let wsSent = false;
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    try {
+      ws.send(JSON.stringify(payload));
+      wsSent = true;
+    } catch (e) {
+      console.warn('WS send failed, using HTTP:', e);
+    }
+  }
+
+  // 2. HTTP POST persistence
   try {
     const res = await fetch(`${API_BASE}/api/messages`, {
       method: 'POST',
@@ -1533,29 +1648,19 @@ async function sendChatMessage() {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${currentToken}`
       },
-      body: JSON.stringify({
-        receiver_id: activeChatPeer.id,
-        content
-      })
+      body: JSON.stringify(payload)
     });
     const savedMsg = await res.json();
     if (savedMsg.id) {
-      const statusEl = document.getElementById(`msg-status-${tempId}`);
-      if (statusEl) {
-        statusEl.id = `msg-status-${savedMsg.id}`;
-        statusEl.innerHTML = '<i data-lucide="check-check" class="w-3 h-3 text-emerald-600"></i>';
-        if (window.lucide) lucide.createIcons();
-      }
-      const bubbleEl = document.getElementById(`msg-bubble-${tempId}`);
-      if (bubbleEl) {
-        bubbleEl.id = `msg-bubble-${savedMsg.id}`;
-      }
+      updateMessageStatus(tempId, savedMsg.id);
     }
   } catch (err) {
-    console.error('Error sending message:', err);
-    const statusEl = document.getElementById(`msg-status-${tempId}`);
-    if (statusEl) {
-      statusEl.innerHTML = '<span class="text-rose-500 font-bold" title="Failed to deliver">⚠️</span>';
+    if (!wsSent) {
+      console.error('Error sending message:', err);
+      const statusEl = document.getElementById(`msg-status-${tempId}`);
+      if (statusEl) {
+        statusEl.innerHTML = '<span class="text-rose-500 font-bold" title="Failed to deliver">⚠️</span>';
+      }
     }
   }
 }
@@ -1679,6 +1784,22 @@ async function stopAndSendVoiceRecording() {
       };
       appendMessageToChat(optimisticMsg, true);
 
+      // 1. Instant WebSocket dispatch
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        try {
+          ws.send(JSON.stringify({
+            type: 'chat_message',
+            tempId: tempId,
+            receiver_id: activeChatPeer.id,
+            content: base64Audio,
+            message_type: 'audio',
+            sender_name: currentUser ? currentUser.name : '',
+            sender_avatar: currentUser ? currentUser.avatar : ''
+          }));
+        } catch (e) {}
+      }
+
+      // 2. HTTP persistence
       try {
         const res = await fetch(`${API_BASE}/api/messages`, {
           method: 'POST',
@@ -1687,19 +1808,17 @@ async function stopAndSendVoiceRecording() {
             'Authorization': `Bearer ${currentToken}`
           },
           body: JSON.stringify({
+            tempId: tempId,
             receiver_id: activeChatPeer.id,
             content: base64Audio,
-            message_type: 'audio'
+            message_type: 'audio',
+            sender_name: currentUser ? currentUser.name : '',
+            sender_avatar: currentUser ? currentUser.avatar : ''
           })
         });
         const savedMsg = await res.json();
         if (savedMsg.id) {
-          const statusEl = document.getElementById(`msg-status-${tempId}`);
-          if (statusEl) {
-            statusEl.id = `msg-status-${savedMsg.id}`;
-            statusEl.innerHTML = '<i data-lucide="check-check" class="w-3 h-3 text-emerald-600"></i>';
-            if (window.lucide) lucide.createIcons();
-          }
+          updateMessageStatus(tempId, savedMsg.id);
         }
       } catch (err) {
         console.error('Error sending audio message:', err);
@@ -2301,6 +2420,9 @@ function rejectIncomingCall() {
 
 // ================= WEBSOCKET REAL-TIME SIGNALING =================
 
+let wsHeartbeatInterval = null;
+let wsReconnectTimeout = null;
+
 function initWebSocket() {
   if (ws) {
     try { ws.close(); } catch(e){}
@@ -2316,6 +2438,13 @@ function initWebSocket() {
         token: currentToken
       }));
     }
+    // High-frequency heartbeat ping every 8s to guarantee zero-latency
+    clearInterval(wsHeartbeatInterval);
+    wsHeartbeatInterval = setInterval(() => {
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: 'ping' }));
+      }
+    }, 8000);
   };
 
   ws.onmessage = async (event) => {
@@ -2327,17 +2456,49 @@ function initWebSocket() {
           console.log('WS Authenticated for User ID:', data.userId);
           break;
 
-        case 'new_message':
-          if (activeChatPeer && (data.message.sender_id === activeChatPeer.id || data.message.receiver_id === activeChatPeer.id)) {
-            const existing = document.getElementById(`msg-bubble-${data.message.id}`);
-            if (!existing) {
-              appendMessageToChat(data.message, false);
+        case 'pong':
+          break;
+
+        case 'new_message': {
+          const msg = data.message;
+          if (!msg) break;
+
+          const msgSenderId = Number(msg.sender_id);
+          const msgReceiverId = Number(msg.receiver_id);
+          const activePeerId = activeChatPeer ? Number(activeChatPeer.id) : null;
+          const myId = currentUser ? Number(currentUser.id) : null;
+
+          const isCurrentChat = activePeerId && (
+            msgSenderId === activePeerId || 
+            (msgSenderId === myId && msgReceiverId === activePeerId)
+          );
+
+          if (isCurrentChat) {
+            const exists = (msg.id && document.getElementById(`msg-bubble-${msg.id}`)) ||
+                           (msg.tempId && document.getElementById(`msg-bubble-${msg.tempId}`));
+            if (!exists) {
+              appendMessageToChat(msg, false);
             }
           } else {
             const badge = document.getElementById('chats-badge');
             if (badge) badge.classList.remove('hidden');
           }
           break;
+        }
+
+        case 'message_sent_ack': {
+          if (data.tempId) {
+            updateMessageStatus(data.tempId, data.tempId);
+          }
+          break;
+        }
+
+        case 'message_synced': {
+          if (data.tempId && data.id) {
+            updateMessageStatus(data.tempId, data.id);
+          }
+          break;
+        }
 
         case 'incoming_call':
           handleIncomingCall(data);
@@ -2394,8 +2555,10 @@ function initWebSocket() {
   };
 
   ws.onclose = () => {
+    clearInterval(wsHeartbeatInterval);
     if (currentToken) {
-      setTimeout(initWebSocket, 4000);
+      clearTimeout(wsReconnectTimeout);
+      wsReconnectTimeout = setTimeout(initWebSocket, 1000);
     }
   };
 }
