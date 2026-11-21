@@ -2248,13 +2248,14 @@ async function sendContactCardToUser(recipientId, recipientName, recipientAvatar
   const shared = { ...contactBeingShared };
   const targetId = Number(recipientId);
 
-  // Close sharing view and contact profile
+  // 1. Close sharing palette and contact profile view immediately
   closeSendToChatsView();
   closeContactProfile();
 
-  // Switch into recipient chat screen
-  startChatWithUser(targetId, recipientName, recipientAvatar, recipientRole);
+  // 2. Open recipient's chat view and wait for previous message history to load
+  await startChatWithUser(targetId, recipientName, recipientAvatar, recipientRole);
 
+  // 3. Format structured contact card content
   const contactText = `Contact Card: ${shared.name} (${(shared.role||'user').toUpperCase()}) • ${shared.phone_masked || '+91 98*** **321'}`;
   const tempId = 'temp_contact_' + Date.now();
 
@@ -2274,6 +2275,7 @@ async function sendContactCardToUser(recipientId, recipientName, recipientAvatar
     created_at: new Date().toISOString()
   };
 
+  // 4. Render directly into chat and cache
   appendMessageToChat(optimisticMsg, true);
 
   if (!chatMessagesCache.has(targetId)) {
@@ -2281,7 +2283,17 @@ async function sendContactCardToUser(recipientId, recipientName, recipientAvatar
   }
   chatMessagesCache.get(targetId).push(optimisticMsg);
 
-  // 1. Instant WebSocket dispatch (sub-10ms)
+  // Update recent conversations snippet
+  let conv = recentConversations.find(c => Number(c.peer_id) === targetId);
+  if (conv) {
+    conv.last_message = contactText;
+    conv.last_message_type = 'contact_card';
+    conv.last_message_time = optimisticMsg.created_at;
+    conv.last_message_sender_id = currentUser ? Number(currentUser.id) : 0;
+    renderContactsList();
+  }
+
+  // 5. Instant WebSocket dispatch
   if (ws && ws.readyState === WebSocket.OPEN) {
     try {
       ws.send(JSON.stringify({
@@ -2303,7 +2315,7 @@ async function sendContactCardToUser(recipientId, recipientName, recipientAvatar
     }
   }
 
-  // 2. Persist to Neon DB
+  // 6. Persist to Neon DB
   if (currentToken) {
     try {
       await fetch(`${API_BASE}/api/messages`, {
@@ -2316,6 +2328,12 @@ async function sendContactCardToUser(recipientId, recipientName, recipientAvatar
           receiver_id: targetId,
           content: contactText,
           message_type: 'contact_card',
+          contact_id: shared.id,
+          contact_name: shared.name,
+          contact_role: shared.role,
+          contact_avatar: shared.avatar,
+          contact_phone: shared.phone_masked,
+          contact_bio: shared.bio || 'Available on LandConnect',
           tempId: tempId,
           sender_name: currentUser ? currentUser.name : ''
         })
@@ -2325,7 +2343,7 @@ async function sendContactCardToUser(recipientId, recipientName, recipientAvatar
     }
   }
 
-  showToast(`Contact card sent to ${recipientName}`, 'info');
+  showToast(`Contact card for ${shared.name} sent to ${recipientName}`, 'info');
 }
 
 function toggleContactOptionsDropdown() {

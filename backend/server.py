@@ -734,7 +734,13 @@ async def api_send_message(request):
         "sender_avatar": data.get("sender_avatar", ""),
         "listing_title": data.get("listing_title", ""),
         "listing_price": data.get("listing_price", 0),
-        "listing_images": data.get("listing_images", [])
+        "listing_images": data.get("listing_images", []),
+        "contact_id": data.get("contact_id"),
+        "contact_name": data.get("contact_name"),
+        "contact_role": data.get("contact_role"),
+        "contact_avatar": data.get("contact_avatar"),
+        "contact_phone": data.get("contact_phone"),
+        "contact_bio": data.get("contact_bio")
     }
     await send_to_user(receiver_id, {
         "type": "new_message",
@@ -890,7 +896,13 @@ async def websocket_signaling(websocket: WebSocket):
                         "sender_avatar": data.get("sender_avatar", ""),
                         "listing_title": data.get("listing_title", ""),
                         "listing_price": data.get("listing_price", 0),
-                        "listing_images": data.get("listing_images", [])
+                        "listing_images": data.get("listing_images", []),
+                        "contact_id": data.get("contact_id"),
+                        "contact_name": data.get("contact_name"),
+                        "contact_role": data.get("contact_role"),
+                        "contact_avatar": data.get("contact_avatar"),
+                        "contact_phone": data.get("contact_phone"),
+                        "contact_bio": data.get("contact_bio")
                     }
 
                     # 1. INSTANT DISPATCH TO RECEIVER OVER WS (0ms)
