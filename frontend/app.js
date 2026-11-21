@@ -281,6 +281,7 @@ function applyUserRoleUI() {
   const permPostStatus = document.getElementById('perm-post-status');
 
   const canPost = (currentUser.role === 'seller' || currentUser.role === 'broker');
+  const myPropertiesSection = document.getElementById('my-properties-section');
 
   if (canPost) {
     if (bannerPostBtn) bannerPostBtn.classList.remove('hidden');
@@ -291,6 +292,8 @@ function applyUserRoleUI() {
       permPostStatus.innerHTML = '<i data-lucide="check" class="w-3.5 h-3.5 text-emerald-500"></i> Authorized';
       permPostStatus.className = 'text-emerald-600 font-bold flex items-center gap-1';
     }
+    if (myPropertiesSection) myPropertiesSection.classList.remove('hidden');
+    loadMyListings();
   } else {
     if (bannerPostBtn) bannerPostBtn.classList.add('hidden');
     if (floatingPostBtn) floatingPostBtn.classList.add('hidden');
@@ -300,6 +303,7 @@ function applyUserRoleUI() {
       permPostStatus.innerHTML = '<i data-lucide="lock" class="w-3.5 h-3.5 text-slate-400"></i> Restricted (Sellers & Brokers only)';
       permPostStatus.className = 'text-slate-400 font-bold flex items-center gap-1';
     }
+    if (myPropertiesSection) myPropertiesSection.classList.add('hidden');
   }
 
   if (window.lucide) lucide.createIcons();
@@ -326,7 +330,13 @@ function switchTab(tabId) {
   });
 
   if (tabId === 'calls') fetchCallLogs();
-  if (tabId === 'map') updateMapCard(allListings[0]);
+  if (tabId === 'map') {
+    renderMapParcelsSelector();
+    updateMapCard(selectedMapListing || allListings[0]);
+  }
+  if (tabId === 'profile' && (currentUser?.role === 'seller' || currentUser?.role === 'broker')) {
+    loadMyListings();
+  }
   if (window.lucide) lucide.createIcons();
 }
 
@@ -359,12 +369,14 @@ function renderListings(listings) {
 
     return `
       <div class="bg-white rounded-2xl overflow-hidden shadow-sm border border-slate-200/80 hover:shadow-md transition">
-        <div class="relative h-44 w-full bg-slate-100">
-          <img src="${firstImg}" class="w-full h-full object-cover">
+        <!-- Clickable Photo and Header (Opens Details Modal) -->
+        <div onclick="openPropertyDetails(${item.id})" class="relative h-44 w-full bg-slate-100 cursor-pointer group">
+          <img src="${firstImg}" class="w-full h-full object-cover group-hover:scale-105 transition duration-300">
+          <div class="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-black/20"></div>
           <div class="absolute top-3 left-3 bg-black/60 backdrop-blur-md text-white text-[10px] font-bold px-2.5 py-1 rounded-full uppercase tracking-wider">
             ${item.property_type}
           </div>
-          <div class="absolute bottom-3 left-3 bg-wa-tealDark/90 backdrop-blur-md text-white px-3 py-1 rounded-xl text-xs font-black shadow-lg">
+          <div class="absolute bottom-3 left-3 bg-wa-tealDark/95 backdrop-blur-md text-white px-3 py-1 rounded-xl text-xs font-black shadow-lg">
             ₹${formattedPrice}
           </div>
           <div class="absolute bottom-3 right-3 bg-black/60 backdrop-blur-md text-white text-[10px] px-2 py-0.5 rounded-lg flex items-center gap-1 font-medium">
@@ -374,16 +386,18 @@ function renderListings(listings) {
         </div>
 
         <div class="p-3.5 space-y-2">
-          <h3 class="font-bold text-slate-800 text-sm leading-snug">${item.title}</h3>
-          
-          <div class="flex items-center gap-1 text-[11px] text-slate-500">
-            <i data-lucide="map-pin" class="w-3.5 h-3.5 text-wa-teal flex-shrink-0"></i>
-            <span class="truncate">${item.location_address}, ${item.city}</span>
-          </div>
+          <div onclick="openPropertyDetails(${item.id})" class="cursor-pointer">
+            <h3 class="font-bold text-slate-800 text-sm leading-snug hover:text-wa-teal transition">${item.title}</h3>
+            
+            <div class="flex items-center gap-1 text-[11px] text-slate-500 mt-1">
+              <i data-lucide="map-pin" class="w-3.5 h-3.5 text-wa-teal flex-shrink-0"></i>
+              <span class="truncate">${item.location_address}, ${item.city}</span>
+            </div>
 
-          <p class="text-xs text-slate-600 line-clamp-2 leading-relaxed">
-            ${item.description}
-          </p>
+            <p class="text-xs text-slate-600 line-clamp-2 leading-relaxed mt-1">
+              ${item.description}
+            </p>
+          </div>
 
           <div class="pt-2 border-t border-slate-100 flex items-center justify-between">
             <div class="flex items-center gap-2">
@@ -501,12 +515,257 @@ async function handleCreateListing(e) {
       alert('Land Listing published successfully!');
       closeNewListingModal();
       await loadListings();
+      if (currentUser?.role === 'seller' || currentUser?.role === 'broker') {
+        await loadMyListings();
+      }
       switchTab('feed');
     } else {
       alert(data.error || 'Failed to create listing');
     }
   } catch (err) {
     alert('Error: ' + err.message);
+  }
+}
+
+// ================= PROPERTY DETAILS & LISTING MANAGEMENT =================
+
+function openPropertyDetails(listingId) {
+  const item = allListings.find(l => l.id === listingId);
+  if (!item) return;
+
+  const modal = document.getElementById('property-detail-modal');
+  const imgEl = document.getElementById('detail-img');
+  const priceEl = document.getElementById('detail-price');
+  const pricePerSqftEl = document.getElementById('detail-price-per-sqft');
+  const typeEl = document.getElementById('detail-type');
+  const titleEl = document.getElementById('detail-title');
+  const locEl = document.getElementById('detail-location');
+  const areaEl = document.getElementById('detail-area');
+  const descEl = document.getElementById('detail-desc');
+  const featuresEl = document.getElementById('detail-features');
+  const ownerAvatar = document.getElementById('detail-owner-avatar');
+  const ownerName = document.getElementById('detail-owner-name');
+  const ownerRole = document.getElementById('detail-owner-role');
+  const ownerPhone = document.getElementById('detail-owner-phone');
+  const btnChat = document.getElementById('btn-detail-chat');
+  const btnCallAudio = document.getElementById('btn-detail-call-audio');
+  const btnCallVideo = document.getElementById('btn-detail-call-video');
+  const ownerActions = document.getElementById('detail-owner-actions');
+  const btnEdit = document.getElementById('btn-edit-listing');
+  const btnDelete = document.getElementById('btn-delete-listing');
+
+  const formattedPrice = Number(item.price).toLocaleString('en-IN');
+  const perSqft = item.area_sqft > 0 ? Math.round(item.price / item.area_sqft) : 0;
+  const firstImg = item.images && item.images.length > 0 
+    ? item.images[0] 
+    : 'https://images.unsplash.com/photo-1500382017468-9049fed747ef?w=800';
+
+  if (imgEl) imgEl.src = firstImg;
+  if (priceEl) priceEl.textContent = `₹${formattedPrice}`;
+  if (pricePerSqftEl) pricePerSqftEl.textContent = perSqft > 0 ? `(₹${perSqft}/sq.ft)` : '';
+  if (typeEl) typeEl.textContent = item.property_type;
+  if (titleEl) titleEl.textContent = item.title;
+  if (locEl) locEl.textContent = `${item.location_address}, ${item.city}, ${item.state}`;
+  if (areaEl) {
+    const acres = (item.area_sqft / 43560).toFixed(2);
+    areaEl.textContent = `${Number(item.area_sqft).toLocaleString()} sq.ft (${acres} Acres)`;
+  }
+  if (descEl) descEl.textContent = item.description;
+
+  if (featuresEl) {
+    const defaultFeatures = ["Clear Legal Title", "30ft Road Access", "Electricity Available", "Borewell Water", "Immediate Registration"];
+    const feats = (item.features && item.features.length > 0) ? item.features : defaultFeatures;
+    featuresEl.innerHTML = feats.map(f => `
+      <span class="bg-emerald-50 text-emerald-800 border border-emerald-200 px-2.5 py-1 rounded-lg text-[10px] font-semibold flex items-center gap-1">
+        <i data-lucide="check" class="w-3 h-3 text-emerald-600"></i> ${f}
+      </span>
+    `).join('');
+  }
+
+  if (ownerAvatar) ownerAvatar.src = item.owner_avatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100';
+  if (ownerName) ownerName.textContent = item.owner_name;
+  if (ownerRole) ownerRole.textContent = item.owner_role;
+  if (ownerPhone) ownerPhone.textContent = `${item.owner_phone || 'Phone Protected'}`;
+
+  // Contact actions
+  if (btnChat) btnChat.onclick = () => {
+    closePropertyDetails();
+    startChatWithUser(item.owner_id, escapeQuotes(item.owner_name), escapeQuotes(item.owner_avatar), item.owner_role);
+  };
+  if (btnCallAudio) btnCallAudio.onclick = () => {
+    closePropertyDetails();
+    initiateDirectCall(item.owner_id, escapeQuotes(item.owner_name), escapeQuotes(item.owner_avatar), item.owner_role, 'audio', item.id);
+  };
+  if (btnCallVideo) btnCallVideo.onclick = () => {
+    closePropertyDetails();
+    initiateDirectCall(item.owner_id, escapeQuotes(item.owner_name), escapeQuotes(item.owner_avatar), item.owner_role, 'video', item.id);
+  };
+
+  // Check if current user is owner (Allow edit & delete)
+  const isOwner = currentUser && (item.owner_id === currentUser.id);
+  if (ownerActions) {
+    if (isOwner) {
+      ownerActions.classList.remove('hidden');
+      if (btnEdit) btnEdit.onclick = () => {
+        closePropertyDetails();
+        openEditListing(item.id);
+      };
+      if (btnDelete) btnDelete.onclick = () => {
+        handleDeleteListing(item.id);
+      };
+    } else {
+      ownerActions.classList.add('hidden');
+    }
+  }
+
+  if (modal) modal.classList.remove('hidden');
+  if (window.lucide) lucide.createIcons();
+}
+
+function closePropertyDetails() {
+  const modal = document.getElementById('property-detail-modal');
+  if (modal) modal.classList.add('hidden');
+}
+
+function openEditListing(listingId) {
+  const item = allListings.find(l => l.id === listingId);
+  if (!item) return;
+
+  document.getElementById('edit-listing-id').value = item.id;
+  document.getElementById('edit-listing-title').value = item.title;
+  document.getElementById('edit-listing-type').value = item.property_type;
+  document.getElementById('edit-listing-area').value = item.area_sqft;
+  document.getElementById('edit-listing-price').value = item.price;
+  document.getElementById('edit-listing-address').value = item.location_address;
+  document.getElementById('edit-listing-lat').value = item.latitude;
+  document.getElementById('edit-listing-lng').value = item.longitude;
+  document.getElementById('edit-listing-image').value = item.images && item.images.length > 0 ? item.images[0] : '';
+  document.getElementById('edit-listing-desc').value = item.description;
+
+  const modal = document.getElementById('edit-listing-modal');
+  if (modal) modal.classList.remove('hidden');
+}
+
+function closeEditListingModal() {
+  const modal = document.getElementById('edit-listing-modal');
+  if (modal) modal.classList.add('hidden');
+}
+
+async function handleUpdateListing(e) {
+  e.preventDefault();
+  const listingId = document.getElementById('edit-listing-id').value;
+  if (!currentToken || !listingId) return;
+
+  const payload = {
+    title: document.getElementById('edit-listing-title').value,
+    property_type: document.getElementById('edit-listing-type').value,
+    area_sqft: parseFloat(document.getElementById('edit-listing-area').value),
+    price: parseFloat(document.getElementById('edit-listing-price').value),
+    location_address: document.getElementById('edit-listing-address').value,
+    latitude: parseFloat(document.getElementById('edit-listing-lat').value),
+    longitude: parseFloat(document.getElementById('edit-listing-lng').value),
+    images: [document.getElementById('edit-listing-image').value],
+    description: document.getElementById('edit-listing-desc').value
+  };
+
+  try {
+    const res = await fetch(`${API_BASE}/api/listings/${listingId}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${currentToken}`
+      },
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json();
+    if (data.success) {
+      alert('Listing updated successfully!');
+      closeEditListingModal();
+      await loadListings();
+      await loadMyListings();
+    } else {
+      alert(data.error || 'Failed to update listing');
+    }
+  } catch (err) {
+    alert('Error updating listing: ' + err.message);
+  }
+}
+
+async function handleDeleteListing(listingId) {
+  if (!confirm('Are you sure you want to permanently delete this land listing?')) return;
+  if (!currentToken) return;
+
+  try {
+    const res = await fetch(`${API_BASE}/api/listings/${listingId}`, {
+      method: 'DELETE',
+      headers: {
+        'Authorization': `Bearer ${currentToken}`
+      }
+    });
+    const data = await res.json();
+    if (data.success) {
+      alert('Land listing deleted.');
+      closePropertyDetails();
+      await loadListings();
+      await loadMyListings();
+    } else {
+      alert(data.error || 'Failed to delete listing');
+    }
+  } catch (err) {
+    alert('Error deleting listing: ' + err.message);
+  }
+}
+
+async function loadMyListings() {
+  if (!currentToken || !currentUser) return;
+  const listEl = document.getElementById('my-listings-list');
+  if (!listEl) return;
+
+  try {
+    const res = await fetch(`${API_BASE}/api/listings/my`, {
+      headers: { 'Authorization': `Bearer ${currentToken}` }
+    });
+    const myListings = await res.json();
+    if (myListings.length === 0) {
+      listEl.innerHTML = `
+        <div class="text-center py-4 text-slate-400 text-xs">
+          You haven't listed any land parcels yet.
+          <button onclick="openNewListingModal()" class="text-wa-teal font-bold block mx-auto mt-1 hover:underline">+ Post your first plot</button>
+        </div>
+      `;
+      return;
+    }
+
+    listEl.innerHTML = myListings.map(item => {
+      const formattedPrice = Number(item.price).toLocaleString('en-IN');
+      const firstImg = item.images && item.images.length > 0 
+        ? item.images[0] 
+        : 'https://images.unsplash.com/photo-1500382017468-9049fed747ef?w=800';
+
+      return `
+        <div class="p-2.5 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between">
+          <div class="flex items-center gap-2.5 truncate cursor-pointer" onclick="openPropertyDetails(${item.id})">
+            <img src="${firstImg}" class="w-10 h-10 rounded-lg object-cover flex-shrink-0 border border-slate-200">
+            <div class="truncate">
+              <h5 class="font-bold text-xs text-slate-800 truncate">${item.title}</h5>
+              <div class="text-[10px] text-emerald-700 font-semibold">₹${formattedPrice} • ${item.property_type}</div>
+            </div>
+          </div>
+          <div class="flex items-center gap-1.5 flex-shrink-0">
+            <button onclick="openEditListing(${item.id})" class="p-1.5 bg-white border border-slate-200 text-slate-600 rounded-lg hover:text-wa-teal transition" title="Edit">
+              <i data-lucide="edit-3" class="w-3.5 h-3.5"></i>
+            </button>
+            <button onclick="handleDeleteListing(${item.id})" class="p-1.5 bg-white border border-rose-200 text-rose-600 rounded-lg hover:bg-rose-50 transition" title="Delete">
+              <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+            </button>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    if (window.lucide) lucide.createIcons();
+  } catch (err) {
+    console.error('Error loading my listings:', err);
   }
 }
 
@@ -1143,29 +1402,85 @@ function initWebSocket() {
   };
 }
 
-// ================= MAP VIEW INTEGRATION =================
+// ================= MAP VIEW & GEOLOCATION =================
+
+let selectedMapListing = null;
+
+function renderMapParcelsSelector() {
+  const container = document.getElementById('map-parcels-selector');
+  const counter = document.getElementById('map-counter');
+  if (counter) counter.textContent = `${allListings.length} Land Parcels`;
+  if (!container) return;
+
+  if (allListings.length === 0) {
+    container.innerHTML = `<span class="text-slate-400 text-[11px]">No parcels available</span>`;
+    return;
+  }
+
+  container.innerHTML = allListings.map((item, idx) => {
+    const isSelected = selectedMapListing && selectedMapListing.id === item.id;
+    return `
+      <button onclick="selectMapParcel(${item.id})" 
+              class="px-2.5 py-1 rounded-full whitespace-nowrap text-[11px] font-semibold transition border ${
+                isSelected 
+                  ? 'bg-wa-teal text-white border-wa-teal shadow-sm' 
+                  : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-200'
+              }">
+        📍 ${item.title.split(' ')[0]} ${item.title.split(' ')[1] || ''} (₹${(item.price / 100000).toFixed(1)}L)
+      </button>
+    `;
+  }).join('');
+}
+
+function selectMapParcel(listingId) {
+  const item = allListings.find(l => l.id === listingId);
+  if (!item) return;
+  selectedMapListing = item;
+  updateMapCard(item);
+  renderMapParcelsSelector();
+}
 
 function updateMapCard(listing) {
+  if (!listing && allListings.length > 0) {
+    listing = allListings[0];
+  }
   if (!listing) return;
+  selectedMapListing = listing;
+
   const titleEl = document.getElementById('map-card-title');
   const priceEl = document.getElementById('map-card-price');
   const typeEl = document.getElementById('map-card-type');
+  const mapIframe = document.getElementById('map-iframe');
 
   if (titleEl) titleEl.textContent = listing.title;
   if (priceEl) priceEl.textContent = `₹${Number(listing.price).toLocaleString('en-IN')}`;
   if (typeEl) typeEl.textContent = listing.property_type;
+
+  // Center OpenStreetMap on listing coordinates
+  if (mapIframe && listing.latitude && listing.longitude) {
+    const lat = listing.latitude;
+    const lng = listing.longitude;
+    const delta = 0.05;
+    mapIframe.src = `https://www.openstreetmap.org/export/embed.html?bbox=${lng - delta},${lat - delta},${lng + delta},${lat + delta}&layer=mapnik&marker=${lat},${lng}`;
+  }
+}
+
+function openSelectedMapPlotDetails() {
+  if (selectedMapListing) {
+    openPropertyDetails(selectedMapListing.id);
+  }
 }
 
 function callListingOwnerFromMap() {
-  if (allListings.length > 0) {
-    const item = allListings[0];
-    initiateDirectCall(item.owner_id, item.owner_name, item.owner_avatar, item.owner_role, 'video', item.id);
+  const item = selectedMapListing || allListings[0];
+  if (item) {
+    initiateDirectCall(item.owner_id, escapeQuotes(item.owner_name), escapeQuotes(item.owner_avatar), item.owner_role, 'video', item.id);
   }
 }
 
 function chatListingOwnerFromMap() {
-  if (allListings.length > 0) {
-    const item = allListings[0];
-    startChatWithUser(item.owner_id, item.owner_name, item.owner_avatar, item.owner_role);
+  const item = selectedMapListing || allListings[0];
+  if (item) {
+    startChatWithUser(item.owner_id, escapeQuotes(item.owner_name), escapeQuotes(item.owner_avatar), item.owner_role);
   }
 }

@@ -186,6 +186,111 @@ async def api_create_listing(request):
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=400)
 
+async def api_my_listings(request):
+    auth_header = request.headers.get("Authorization", "")
+    token = auth_header.replace("Bearer ", "") if "Bearer " in auth_header else auth_header
+    payload = decode_jwt_token(token)
+    if not payload:
+        return JSONResponse({"error": "Unauthorized."}, status_code=401)
+    
+    my_id = payload["sub"]
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT l.*, u.name as owner_name, u.role as owner_role, u.phone_masked as owner_phone, u.avatar as owner_avatar
+        FROM listings l
+        JOIN users u ON l.owner_id = u.id
+        WHERE l.owner_id = %s
+        ORDER BY l.id DESC
+    """, (my_id,))
+    rows = cursor.fetchall()
+    listings = []
+    for r in rows:
+        d = serialize_dict(dict(r))
+        d["images"] = json.loads(d["images"]) if isinstance(d["images"], str) else (d["images"] or [])
+        d["features"] = json.loads(d["features"]) if isinstance(d["features"], str) else (d["features"] or [])
+        listings.append(d)
+    cursor.close()
+    conn.close()
+    return JSONResponse(listings)
+
+async def api_update_listing(request):
+    listing_id = int(request.path_params["id"])
+    auth_header = request.headers.get("Authorization", "")
+    token = auth_header.replace("Bearer ", "") if "Bearer " in auth_header else auth_header
+    payload = decode_jwt_token(token)
+    if not payload:
+        return JSONResponse({"error": "Unauthorized."}, status_code=401)
+
+    my_id = payload["sub"]
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT owner_id FROM listings WHERE id = %s", (listing_id,))
+    row = cursor.fetchone()
+    if not row:
+        cursor.close()
+        conn.close()
+        return JSONResponse({"error": "Listing not found."}, status_code=404)
+    if row["owner_id"] != my_id:
+        cursor.close()
+        conn.close()
+        return JSONResponse({"error": "Forbidden: You are not the owner of this listing."}, status_code=403)
+
+    try:
+        data = await request.json()
+        title = data.get("title", "").strip()
+        description = data.get("description", "").strip()
+        price = float(data.get("price", 0))
+        area_sqft = float(data.get("area_sqft", 0))
+        property_type = data.get("property_type", "Residential")
+        location_address = data.get("location_address", "").strip()
+        latitude = float(data.get("latitude", 12.9716))
+        longitude = float(data.get("longitude", 77.5946))
+        images = json.dumps(data.get("images", ["https://images.unsplash.com/photo-1500382017468-9049fed747ef?w=800"]))
+
+        cursor.execute("""
+            UPDATE listings
+            SET title = %s, description = %s, price = %s, area_sqft = %s,
+                property_type = %s, location_address = %s, latitude = %s, longitude = %s, images = %s
+            WHERE id = %s
+        """, (title, description, price, area_sqft, property_type, location_address, latitude, longitude, images, listing_id))
+        conn.commit()
+        cursor.close()
+        conn.close()
+        return JSONResponse({"success": True, "message": "Listing updated successfully."})
+    except Exception as e:
+        cursor.close()
+        conn.close()
+        return JSONResponse({"error": str(e)}, status_code=400)
+
+async def api_delete_listing(request):
+    listing_id = int(request.path_params["id"])
+    auth_header = request.headers.get("Authorization", "")
+    token = auth_header.replace("Bearer ", "") if "Bearer " in auth_header else auth_header
+    payload = decode_jwt_token(token)
+    if not payload:
+        return JSONResponse({"error": "Unauthorized."}, status_code=401)
+
+    my_id = payload["sub"]
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT owner_id FROM listings WHERE id = %s", (listing_id,))
+    row = cursor.fetchone()
+    if not row:
+        cursor.close()
+        conn.close()
+        return JSONResponse({"error": "Listing not found."}, status_code=404)
+    if row["owner_id"] != my_id:
+        cursor.close()
+        conn.close()
+        return JSONResponse({"error": "Forbidden: You are not the owner of this listing."}, status_code=403)
+
+    cursor.execute("DELETE FROM listings WHERE id = %s", (listing_id,))
+    conn.commit()
+    cursor.close()
+    conn.close()
+    return JSONResponse({"success": True, "message": "Listing deleted successfully."})
+
 async def api_get_messages(request):
     other_user_id = int(request.path_params["user_id"])
     auth_header = request.headers.get("Authorization", "")
@@ -387,6 +492,9 @@ routes = [
     Route("/api/users", api_users, methods=["GET"]),
     Route("/api/listings", api_get_listings, methods=["GET"]),
     Route("/api/listings", api_create_listing, methods=["POST"]),
+    Route("/api/listings/my", api_my_listings, methods=["GET"]),
+    Route("/api/listings/{id:int}", api_update_listing, methods=["PUT"]),
+    Route("/api/listings/{id:int}", api_delete_listing, methods=["DELETE"]),
     Route("/api/messages/{user_id:int}", api_get_messages, methods=["GET"]),
     Route("/api/messages", api_send_message, methods=["POST"]),
     Route("/api/calls/history", api_call_logs, methods=["GET"]),
