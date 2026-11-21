@@ -799,7 +799,7 @@ async function handleListingImageUpload(inputEl, previewBoxId, previewImgId, hid
   if (previewImg) previewImg.src = localUrl;
   if (previewBox) previewBox.classList.remove('hidden');
   if (statusEl) {
-    statusEl.innerHTML = `<span class="animate-spin inline-block mr-1">⏳</span> Uploading to storage bucket...`;
+    statusEl.innerHTML = `<span class="animate-spin inline-block mr-1">⏳</span> Uploading photo...`;
   }
 
   // Convert to Base64
@@ -825,16 +825,16 @@ async function handleListingImageUpload(inputEl, previewBoxId, previewImgId, hid
       if (data.success && data.url) {
         if (hiddenInput) hiddenInput.value = data.url;
         if (statusEl) {
-          statusEl.innerHTML = `<i data-lucide="check-circle" class="w-3.5 h-3.5 text-emerald-400"></i> Stored in ${data.bucket}`;
+          statusEl.innerHTML = `<i data-lucide="check-circle" class="w-3.5 h-3.5 text-emerald-400"></i> Photo uploaded successfully`;
           if (window.lucide) lucide.createIcons();
         }
-        showToast(`Photo stored in ${data.bucket} bucket`, 'success');
+        showToast('Photo uploaded successfully', 'success');
       } else {
         showToast('Upload failed: ' + (data.error || 'Server error'), 'error');
         if (statusEl) statusEl.textContent = 'Upload failed';
       }
     } catch (err) {
-      console.error('Error uploading image to bucket:', err);
+      console.error('Error uploading image:', err);
       if (statusEl) statusEl.textContent = 'Upload error: ' + err.message;
       showToast('Image upload error', 'error');
     }
@@ -1018,7 +1018,7 @@ function openEditListing(listingId) {
   const editPreviewImg = document.getElementById('edit-listing-preview-img');
   const editBucketStatus = document.getElementById('edit-listing-bucket-status');
   if (editPreviewImg && imgUrl) editPreviewImg.src = imgUrl;
-  if (editBucketStatus) editBucketStatus.innerHTML = '<i data-lucide="check-circle" class="w-3.5 h-3.5"></i> Stored in Bucket';
+  if (editBucketStatus) editBucketStatus.innerHTML = '<i data-lucide="check-circle" class="w-3.5 h-3.5"></i> Photo uploaded';
   document.getElementById('edit-listing-desc').value = item.description;
 
   const modal = document.getElementById('edit-listing-modal');
@@ -2920,7 +2920,7 @@ function openEditProfileModal() {
   }
 
   if (statusEl) {
-    statusEl.textContent = 'Tap camera to upload new photo to cloud bucket';
+    statusEl.textContent = 'Tap camera to change photo';
     statusEl.className = 'text-[10px] text-slate-500 font-medium text-center';
   }
 
@@ -2951,7 +2951,7 @@ async function handleProfilePhotoUpload(inputEl) {
   }
 
   if (statusEl) {
-    statusEl.innerHTML = '<span class="inline-block animate-spin mr-1">⏳</span> Uploading photo to cloud bucket...';
+    statusEl.innerHTML = '<span class="inline-block animate-spin mr-1">⏳</span> Uploading photo...';
     statusEl.className = 'text-[10px] text-wa-teal font-medium text-center';
   }
 
@@ -2977,10 +2977,10 @@ async function handleProfilePhotoUpload(inputEl) {
           if (previewImg) previewImg.src = data.url;
           if (urlInput) urlInput.value = data.url;
           if (statusEl) {
-            statusEl.textContent = '✓ Profile photo uploaded and ready to save';
+            statusEl.textContent = '✓ Profile photo uploaded';
             statusEl.className = 'text-[10px] text-emerald-600 font-bold text-center';
           }
-          showToast('Profile photo uploaded to cloud bucket', 'success');
+          showToast('Profile photo updated', 'success');
         } else {
           throw new Error(data.error || 'Failed to upload image');
         }

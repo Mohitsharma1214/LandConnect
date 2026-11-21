@@ -903,17 +903,17 @@
                 <div class="w-8 h-8 rounded-full bg-emerald-100 text-wa-teal flex items-center justify-center">
                   <i data-lucide="cloud-upload" class="w-4 h-4"></i>
                 </div>
-                <span class="font-bold text-xs text-slate-800">Tap to upload land photo into bucket</span>
-                <span class="text-[10px] text-slate-400">PNG, JPG, WEBP stored in persistent bucket</span>
+                <span class="font-bold text-xs text-slate-800">Tap to upload land photo</span>
+                <span class="text-[10px] text-slate-400">PNG, JPG, WEBP formats supported</span>
               </div>
             </div>
 
-            <!-- Upload Preview Box & Bucket Badge (Hidden by default, shown upon upload) -->
+            <!-- Upload Preview Box & Photo Badge (Hidden by default, shown upon upload) -->
             <div id="new-listing-preview-box" class="hidden mt-2 relative rounded-2xl overflow-hidden border border-slate-200">
               <img id="new-listing-preview-img" src="" class="w-full h-32 object-cover">
               <div class="absolute bottom-2 left-2 right-2 bg-slate-900/90 backdrop-blur-md text-white text-[10px] p-2 rounded-xl flex items-center justify-between">
                 <span id="new-listing-bucket-status" class="flex items-center gap-1 font-semibold text-emerald-300 truncate">
-                  <i data-lucide="check-circle" class="w-3.5 h-3.5"></i> Ready in Bucket
+                  <i data-lucide="check-circle" class="w-3.5 h-3.5"></i> Photo uploaded
                 </span>
                 <button type="button" onclick="document.getElementById('new-listing-file-input').click()" class="text-[10px] text-slate-300 hover:text-white underline font-medium">
                   Replace
@@ -1165,17 +1165,17 @@
                 <div class="w-8 h-8 rounded-full bg-emerald-100 text-wa-teal flex items-center justify-center">
                   <i data-lucide="cloud-upload" class="w-4 h-4"></i>
                 </div>
-                <span class="font-bold text-xs text-slate-800">Tap to upload / replace photo in bucket</span>
-                <span class="text-[10px] text-slate-400">Stores directly in storage bucket</span>
+                <span class="font-bold text-xs text-slate-800">Tap to upload / replace photo</span>
+                <span class="text-[10px] text-slate-400">PNG, JPG, WEBP formats supported</span>
               </div>
             </div>
 
-            <!-- Upload Preview Box & Bucket Badge -->
+            <!-- Upload Preview Box & Photo Badge -->
             <div id="edit-listing-preview-box" class="mt-2 relative rounded-2xl overflow-hidden border border-slate-200">
               <img id="edit-listing-preview-img" src="" class="w-full h-32 object-cover">
               <div class="absolute bottom-2 left-2 right-2 bg-slate-900/90 backdrop-blur-md text-white text-[10px] p-2 rounded-xl flex items-center justify-between">
                 <span id="edit-listing-bucket-status" class="flex items-center gap-1 font-semibold text-emerald-300 truncate">
-                  <i data-lucide="check-circle" class="w-3.5 h-3.5"></i> Ready in Bucket
+                  <i data-lucide="check-circle" class="w-3.5 h-3.5"></i> Photo uploaded
                 </span>
                 <button type="button" onclick="document.getElementById('edit-listing-file-input').click()" class="text-[10px] text-slate-300 hover:text-white underline font-medium">
                   Replace
@@ -1496,7 +1496,7 @@
             <input type="file" id="edit-profile-photo-input" accept="image/*" class="hidden" onchange="handleProfilePhotoUpload(this)">
             <input type="hidden" id="edit-profile-avatar-url">
             <div id="edit-profile-upload-status" class="text-[10px] text-slate-500 font-medium text-center">
-              Tap camera to upload new photo to cloud bucket
+              Tap camera to change photo
             </div>
           </div>
 
