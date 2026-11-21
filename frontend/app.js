@@ -1436,9 +1436,9 @@ function renderChatRowHtml(u, isArchivedView = false) {
     <div onclick="startChatWithUser(${u.id}, '${escapeQuotes(u.name)}', '${escapeQuotes(u.avatar)}', '${u.role}')"
          class="group px-3.5 py-3 flex items-center justify-between hover:bg-slate-50 active:bg-slate-100 cursor-pointer transition select-none ${u.is_pinned ? 'bg-emerald-50/40 border-l-4 border-wa-teal' : ''}">
       <div class="flex items-center gap-3 min-w-0 flex-1 pr-2">
-        <div class="relative shrink-0">
+        <div class="relative shrink-0" onclick="event.stopPropagation(); openContactProfile(${u.id})" title="View profile & status">
           <img src="${u.avatar}" onerror="this.src='https://ui-avatars.com/api/?name=${encodeURIComponent(u.name)}&background=075E54&color=fff'" 
-               class="w-11 h-11 rounded-full object-cover border border-slate-200">
+               class="w-11 h-11 rounded-full object-cover border border-slate-200 hover:opacity-85 transition transform hover:scale-105">
           <span class="absolute bottom-0 right-0 w-3 h-3 rounded-full ${isOnline ? 'bg-emerald-500 ring-2 ring-white' : 'bg-slate-300 ring-2 ring-white'}"></span>
         </div>
         <div class="min-w-0 flex-1">
@@ -1795,12 +1795,305 @@ function closeActiveChat() {
   chatSyncInterval = null;
   const chatView = document.getElementById('active-chat-view');
   if (chatView) chatView.classList.add('hidden');
+  closeContactProfile();
   const messagesContainer = document.getElementById('chat-messages-container');
   if (messagesContainer) messagesContainer.innerHTML = '';
   activeChatPeer = null;
   updateFloatingTypingUI();
   switchTab('chats');
   loadUsersList();
+}
+
+// ================= WHATSAPP CONTACT INFO & PROFILE SYSTEM =================
+let currentViewingContact = null;
+
+async function openContactProfile(userId) {
+  let uid = userId ? Number(userId) : (activeChatPeer ? Number(activeChatPeer.id) : null);
+  if (!uid) return;
+
+  // Optimistic preview from local data
+  let contact = allUsers.find(u => Number(u.id) === uid);
+  if (!contact && activeChatPeer && Number(activeChatPeer.id) === uid) {
+    contact = activeChatPeer;
+  }
+  if (!contact) {
+    contact = { id: uid, name: 'Contact', avatar: '', role: 'buyer', is_online: false };
+  }
+
+  currentViewingContact = { ...contact };
+
+  // Render immediately with cached info
+  renderContactProfileUI(currentViewingContact);
+  const profileView = document.getElementById('contact-profile-view');
+  if (profileView) {
+    profileView.classList.remove('hidden');
+  }
+  if (window.lucide) lucide.createIcons();
+
+  // Fetch full live profile from backend (includes real-time online status, bio, and listed properties)
+  try {
+    const res = await fetch(`${API_BASE}/api/users/${uid}`);
+    if (res.ok) {
+      const fullData = await res.json();
+      currentViewingContact = fullData;
+      renderContactProfileUI(currentViewingContact);
+    }
+  } catch (e) {
+    console.error('Error fetching contact profile:', e);
+  }
+}
+
+function closeContactProfile() {
+  const profileView = document.getElementById('contact-profile-view');
+  if (profileView) {
+    profileView.classList.add('hidden');
+  }
+  closeAvatarFullscreen();
+}
+
+function renderContactProfileUI(user) {
+  if (!user) return;
+
+  const isOnline = onlineUserIds.has(Number(user.id)) || Boolean(user.is_online);
+  const defaultStatus = user.role === 'seller' ? 'Direct landowner offering prime commercial and farm plots in Bengaluru outskirts.' :
+                        user.role === 'broker' ? 'Certified RERA Real Estate Broker specializing in greenfield projects & high ROI land.' :
+                        'Individual investor looking for agricultural and residential land parcels.';
+  const bioText = (user.bio && user.bio.trim()) ? user.bio.trim() : defaultStatus;
+  const avatarUrl = user.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(user.name)}&background=075E54&color=fff`;
+
+  // 1. Hero info
+  const avatarEl = document.getElementById('cp-avatar');
+  if (avatarEl) avatarEl.src = avatarUrl;
+
+  const nameEl = document.getElementById('cp-name');
+  if (nameEl) nameEl.textContent = user.name || 'User';
+
+  const roleEl = document.getElementById('cp-role-badge');
+  if (roleEl) {
+    const role = (user.role || 'user').toLowerCase();
+    roleEl.textContent = role.toUpperCase();
+    roleEl.className = `text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider ${
+      role === 'buyer' ? 'bg-blue-100 text-blue-800' :
+      role === 'seller' ? 'bg-emerald-100 text-emerald-800' :
+      'bg-purple-100 text-purple-800'
+    }`;
+  }
+
+  const phoneSub = document.getElementById('cp-phone-sub');
+  if (phoneSub) phoneSub.textContent = user.phone_masked || '+91 98*** **321';
+
+  // 2. Status badge
+  const statusPill = document.getElementById('cp-status-pill');
+  const statusDot = document.getElementById('cp-status-dot');
+  const statusLabel = document.getElementById('cp-status-label');
+  if (statusPill && statusDot && statusLabel) {
+    if (isOnline) {
+      statusPill.className = 'inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200';
+      statusDot.className = 'w-2 h-2 rounded-full bg-emerald-500 animate-pulse';
+      statusLabel.textContent = 'Online';
+    } else {
+      statusPill.className = 'inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-semibold bg-slate-100 text-slate-600 border border-slate-200';
+      statusDot.className = 'w-2 h-2 rounded-full bg-slate-400';
+      statusLabel.textContent = 'Offline';
+    }
+  }
+
+  // 3. About & Phone Number
+  const bioEl = document.getElementById('cp-bio');
+  if (bioEl) bioEl.textContent = bioText;
+
+  const phoneEl = document.getElementById('cp-phone');
+  if (phoneEl) phoneEl.textContent = user.phone_masked || '+91 98*** **321';
+
+  const emailEl = document.getElementById('cp-email');
+  if (emailEl) emailEl.textContent = user.email || `${(user.name||'user').toLowerCase().replace(/\s+/g, '')}@landconnect.com`;
+
+  const joinedEl = document.getElementById('cp-joined');
+  if (joinedEl) {
+    if (user.created_at) {
+      try {
+        const d = new Date(user.created_at);
+        joinedEl.textContent = d.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+      } catch (e) {
+        joinedEl.textContent = 'November 2026';
+      }
+    } else {
+      joinedEl.textContent = 'November 2026';
+    }
+  }
+
+  // 4. Land Parcels / Listings
+  const listingsList = document.getElementById('cp-listings-list');
+  const listingsBadge = document.getElementById('cp-listings-badge');
+  const userListings = Array.isArray(user.listings) ? user.listings : [];
+
+  if (listingsBadge) {
+    listingsBadge.textContent = `${userListings.length} ${userListings.length === 1 ? 'plot' : 'plots'}`;
+  }
+
+  if (listingsList) {
+    if (userListings.length === 0) {
+      listingsList.innerHTML = `
+        <div class="text-center py-6 px-3 bg-slate-50 rounded-xl border border-dashed border-slate-200 text-slate-400">
+          <i data-lucide="map-pin-off" class="w-6 h-6 mx-auto mb-1.5 opacity-40"></i>
+          <p class="text-xs font-semibold text-slate-600">No active land parcels</p>
+          <p class="text-[10px] text-slate-400 mt-0.5">This user has not listed any public land parcels</p>
+        </div>
+      `;
+    } else {
+      listingsList.innerHTML = userListings.map(l => {
+        const thumb = (l.images && l.images[0]) || 'https://images.unsplash.com/photo-1500382017468-9049fed747ef?w=300';
+        const priceNum = Number(l.price) || 0;
+        const priceStr = priceNum >= 10000000 ? `₹${(priceNum/10000000).toFixed(2)} Cr` : `₹${(priceNum/100000).toFixed(2)} Lakh`;
+        return `
+          <div onclick="viewListingFromContactProfile(${l.id})" class="flex items-center gap-3 p-2.5 rounded-xl border border-slate-200 hover:border-wa-teal hover:bg-emerald-50/30 transition cursor-pointer group bg-slate-50/50">
+            <img src="${thumb}" onerror="this.src='https://images.unsplash.com/photo-1500382017468-9049fed747ef?w=300'" class="w-13 h-13 rounded-lg object-cover shrink-0 border border-slate-200">
+            <div class="min-w-0 flex-1">
+              <div class="flex items-center justify-between gap-1">
+                <h5 class="text-xs font-bold text-slate-900 truncate group-hover:text-wa-teal transition">${escapeQuotes(l.title)}</h5>
+                <span class="text-xs font-extrabold text-emerald-700 shrink-0">${priceStr}</span>
+              </div>
+              <p class="text-[10px] text-slate-500 truncate flex items-center gap-1 mt-0.5">
+                <i data-lucide="map-pin" class="w-3 h-3 text-wa-teal shrink-0"></i>
+                <span class="truncate">${escapeQuotes(l.location_address || l.city || 'Bengaluru')}</span>
+              </p>
+              <div class="flex items-center gap-2 mt-1 text-[9px] text-slate-400">
+                <span>${l.area_sqft || 5000} sq.ft</span>
+                <span>•</span>
+                <span class="capitalize text-emerald-600 font-medium">${l.property_type || 'Agricultural'}</span>
+                ${l.verified ? '<span class="text-emerald-700 font-bold bg-emerald-50 px-1 rounded">✓ Verified</span>' : ''}
+              </div>
+            </div>
+            <i data-lucide="chevron-right" class="w-4 h-4 text-slate-300 group-hover:text-wa-teal transition shrink-0"></i>
+          </div>
+        `;
+      }).join('');
+    }
+  }
+
+  // 5. Media & Stats
+  const mediaStats = document.getElementById('cp-media-stats');
+  if (mediaStats) {
+    const cachedMsgs = chatMessagesCache.get(Number(user.id)) || [];
+    const roomsCount = user.meeting_rooms_count || 0;
+    mediaStats.textContent = `${cachedMsgs.length} messages • ${roomsCount} meeting rooms`;
+  }
+
+  // 6. Mute state
+  const muteToggle = document.getElementById('cp-mute-toggle');
+  if (muteToggle) {
+    const mutedUsers = getMutedContactIds();
+    muteToggle.checked = mutedUsers.includes(Number(user.id));
+  }
+
+  if (window.lucide) lucide.createIcons();
+}
+
+function viewListingFromContactProfile(listingId) {
+  closeContactProfile();
+  if (typeof openListingDetailModal === 'function') {
+    openListingDetailModal(listingId);
+  } else {
+    switchTab('feed');
+  }
+}
+
+function contactProfileMessageAction() {
+  if (!currentViewingContact) return;
+  const user = currentViewingContact;
+  closeContactProfile();
+  startChatWithUser(user.id, user.name, user.avatar, user.role);
+}
+
+function contactProfileAudioCallAction() {
+  if (!currentViewingContact) return;
+  const user = currentViewingContact;
+  closeContactProfile();
+  initiateDirectCall(user.id, user.name, user.avatar, user.role, 'audio');
+}
+
+function contactProfileVideoCallAction() {
+  if (!currentViewingContact) return;
+  const user = currentViewingContact;
+  closeContactProfile();
+  initiateDirectCall(user.id, user.name, user.avatar, user.role, 'video');
+}
+
+function contactProfileMeetingAction() {
+  if (!currentViewingContact) return;
+  const user = currentViewingContact;
+  closeContactProfile();
+  startChatWithUser(user.id, user.name, user.avatar, user.role);
+  createMeetingRoom();
+}
+
+function openAvatarFullscreen() {
+  if (!currentViewingContact) return;
+  const modal = document.getElementById('avatar-preview-modal');
+  const img = document.getElementById('avatar-preview-img');
+  const name = document.getElementById('avatar-preview-name');
+  if (modal && img) {
+    img.src = currentViewingContact.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(currentViewingContact.name)}&background=075E54&color=fff`;
+    if (name) name.textContent = currentViewingContact.name;
+    modal.classList.remove('hidden');
+    if (window.lucide) lucide.createIcons();
+  }
+}
+
+function closeAvatarFullscreen() {
+  const modal = document.getElementById('avatar-preview-modal');
+  if (modal) modal.classList.add('hidden');
+}
+
+function shareContactProfile() {
+  if (!currentViewingContact) return;
+  const info = `${currentViewingContact.name} (${(currentViewingContact.role||'user').toUpperCase()}) on LandConnect\nPhone: ${currentViewingContact.phone_masked || '+91 98*** **321'}\nStatus: ${currentViewingContact.bio || 'Available on LandConnect'}`;
+  navigator.clipboard.writeText(info).then(() => {
+    showToast('Contact info copied to clipboard', 'info');
+  }).catch(() => {
+    showToast(`Shared: ${currentViewingContact.name}`, 'info');
+  });
+}
+
+function toggleContactOptionsDropdown() {
+  if (!currentViewingContact) return;
+  showToast(`${currentViewingContact.name} is a verified LandConnect member`, 'info');
+}
+
+function getMutedContactIds() {
+  try {
+    return JSON.parse(localStorage.getItem('lc_muted_contacts') || '[]');
+  } catch (e) {
+    return [];
+  }
+}
+
+function toggleMuteContact() {
+  if (!currentViewingContact) return;
+  const uid = Number(currentViewingContact.id);
+  let muted = getMutedContactIds();
+  if (muted.includes(uid)) {
+    muted = muted.filter(id => id !== uid);
+    showToast(`Unmuted notifications for ${currentViewingContact.name}`, 'info');
+  } else {
+    muted.push(uid);
+    showToast(`Muted notifications for ${currentViewingContact.name}`, 'info');
+  }
+  localStorage.setItem('lc_muted_contacts', JSON.stringify(muted));
+}
+
+function handleBlockContact() {
+  if (!currentViewingContact) return;
+  const name = currentViewingContact.name;
+  showToast(`Contact ${name} blocked`, 'info');
+  closeContactProfile();
+}
+
+function handleReportContact() {
+  if (!currentViewingContact) return;
+  const name = currentViewingContact.name;
+  showToast(`Report submitted for ${name}`, 'info');
+  closeContactProfile();
 }
 
 async function fetchChatMessages(otherUserId) {

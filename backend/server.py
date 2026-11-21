@@ -353,6 +353,57 @@ async def api_users(request):
     users = await asyncio.to_thread(fetch_users)
     return JSONResponse(users)
 
+async def api_user_detail(request):
+    """Get full WhatsApp-style profile of a user with listings, status, and stats"""
+    user_id = request.path_params.get("id")
+    def fetch_user():
+        conn = get_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("SELECT id, name, email, role, phone_masked, avatar, bio, created_at FROM users WHERE id = %s", (user_id,))
+            row = cursor.fetchone()
+            if not row:
+                return None
+            u = serialize_dict(dict(row))
+            u["is_online"] = (int(u["id"]) in active_connections and bool(active_connections[int(u["id"])]))
+            
+            # Fetch active listings by this user
+            cursor.execute("""
+                SELECT id, title, price, price_unit, area_sqft, property_type, location_address, city, state, images, created_at
+                FROM listings
+                WHERE owner_id = %s
+                ORDER BY id DESC
+            """, (user_id,))
+            listings = []
+            for l in cursor.fetchall():
+                ld = serialize_dict(dict(l))
+                if ld.get("images") and isinstance(ld["images"], str):
+                    try:
+                        ld["images"] = json.loads(ld["images"])
+                    except Exception:
+                        ld["images"] = []
+                listings.append(ld)
+            u["listings"] = listings
+
+            # Total meeting rooms participant count
+            cursor.execute("""
+                SELECT COUNT(DISTINCT room_id) as room_count
+                FROM meeting_room_participants
+                WHERE user_id = %s
+            """, (user_id,))
+            m_row = cursor.fetchone()
+            u["meeting_rooms_count"] = m_row["room_count"] if m_row else 0
+
+            cursor.close()
+            return u
+        finally:
+            conn.close()
+
+    user_data = await asyncio.to_thread(fetch_user)
+    if not user_data:
+        return JSONResponse({"error": "User not found."}, status_code=404)
+    return JSONResponse(user_data)
+
 async def api_get_listings(request):
     def fetch_listings():
         conn = get_connection()
@@ -1077,6 +1128,7 @@ routes = [
     Route("/api/auth/profile", api_update_profile, methods=["PUT"]),
     Route("/api/upload", api_upload_image, methods=["POST"]),
     Route("/api/users", api_users, methods=["GET"]),
+    Route("/api/users/{id:int}", api_user_detail, methods=["GET"]),
     Route("/api/listings", api_get_listings, methods=["GET"]),
     Route("/api/listings", api_create_listing, methods=["POST"]),
     Route("/api/listings/my", api_my_listings, methods=["GET"]),

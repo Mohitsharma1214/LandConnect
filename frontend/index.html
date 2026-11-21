@@ -681,17 +681,19 @@
             <button onclick="closeActiveChat()" class="p-1 -ml-1 hover:bg-white/10 rounded-full transition" title="Back to Chats">
               <i data-lucide="arrow-left" class="w-5 h-5"></i>
             </button>
-            <img id="chat-peer-avatar" src="" class="w-9 h-9 rounded-full object-cover border border-white/20 shrink-0">
-            <div class="min-w-0 flex-1">
-              <div class="flex items-center gap-1.5">
-                <h3 id="chat-peer-name" class="font-bold text-sm leading-tight truncate max-w-[130px]">Name</h3>
-                <span id="chat-peer-role" class="text-[9px] px-1.5 py-0.5 rounded font-semibold uppercase shrink-0 bg-white/20 text-white leading-none">Seller</span>
-              </div>
-              <div id="chat-peer-status-container" class="text-[10px] text-emerald-200 flex items-center gap-1 truncate min-h-[14px] mt-0.5">
-                <span id="chat-peer-status-dot" class="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0"></span>
-                <span id="chat-peer-status-text" class="font-normal truncate">online</span>
-                <span class="text-white/40">•</span>
-                <span id="chat-peer-msg-count" class="font-medium text-emerald-100/90 truncate">0 messages</span>
+            <div onclick="openContactProfile(activeChatPeer ? activeChatPeer.id : null)" class="flex items-center gap-2 min-w-0 flex-1 cursor-pointer hover:opacity-90 active:opacity-75 transition group" title="View contact info & status">
+              <img id="chat-peer-avatar" src="" class="w-9 h-9 rounded-full object-cover border border-white/20 shrink-0 group-hover:scale-105 transition-transform">
+              <div class="min-w-0 flex-1">
+                <div class="flex items-center gap-1.5">
+                  <h3 id="chat-peer-name" class="font-bold text-sm leading-tight truncate max-w-[130px]">Name</h3>
+                  <span id="chat-peer-role" class="text-[9px] px-1.5 py-0.5 rounded font-semibold uppercase shrink-0 bg-white/20 text-white leading-none">Seller</span>
+                </div>
+                <div id="chat-peer-status-container" class="text-[10px] text-emerald-200 flex items-center gap-1 truncate min-h-[14px] mt-0.5">
+                  <span id="chat-peer-status-dot" class="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0"></span>
+                  <span id="chat-peer-status-text" class="font-normal truncate">online</span>
+                  <span class="text-white/40">•</span>
+                  <span id="chat-peer-msg-count" class="font-medium text-emerald-100/90 truncate">0 messages</span>
+                </div>
               </div>
             </div>
           </div>
@@ -781,6 +783,238 @@
               </button>
             </div>
           </div>
+        </div>
+      </div>
+
+      <!-- ================= CONTACT INFO / USER PROFILE VIEW (WHATSAPP STYLE) ================= -->
+      <div id="contact-profile-view" class="hidden absolute inset-0 bg-slate-100 flex flex-col z-50 overflow-hidden">
+        <!-- WhatsApp Contact Info Top Bar -->
+        <div class="bg-wa-teal text-white px-3 py-2.5 flex items-center justify-between shadow-md shrink-0">
+          <div class="flex items-center gap-2">
+            <button onclick="closeContactProfile()" class="p-1 -ml-1 hover:bg-white/10 rounded-full transition" title="Back">
+              <i data-lucide="arrow-left" class="w-5 h-5"></i>
+            </button>
+            <h2 class="font-bold text-base tracking-wide">Contact info</h2>
+          </div>
+          <div class="flex items-center gap-1">
+            <button onclick="shareContactProfile()" class="p-1.5 hover:bg-white/10 rounded-full transition text-emerald-100 hover:text-white" title="Share Contact">
+              <i data-lucide="share-2" class="w-4 h-4"></i>
+            </button>
+            <button onclick="toggleContactOptionsDropdown()" class="p-1.5 hover:bg-white/10 rounded-full transition text-emerald-100 hover:text-white" title="More options">
+              <i data-lucide="more-vertical" class="w-4 h-4"></i>
+            </button>
+          </div>
+        </div>
+
+        <!-- Scrollable Profile Body -->
+        <div class="flex-1 overflow-y-auto space-y-2.5 p-3 pb-12">
+          
+          <!-- 1. Hero Profile Card -->
+          <div class="bg-white rounded-2xl shadow-xs border border-slate-200/80 p-5 flex flex-col items-center text-center">
+            <div class="relative group cursor-pointer mb-3" onclick="openAvatarFullscreen()" title="Tap to view photo">
+              <img id="cp-avatar" src="" onerror="this.src='https://ui-avatars.com/api/?name=User&background=075E54&color=fff'" 
+                   class="w-24 h-24 rounded-full object-cover border-4 border-slate-100 shadow-sm transition transform group-hover:scale-105">
+              <div class="absolute inset-0 bg-black/25 rounded-full opacity-0 group-hover:opacity-100 flex items-center justify-center text-white transition">
+                <i data-lucide="zoom-in" class="w-5 h-5"></i>
+              </div>
+            </div>
+
+            <div class="flex items-center gap-1.5 justify-center">
+              <h3 id="cp-name" class="font-bold text-base text-slate-900 leading-tight">Name</h3>
+              <span id="cp-verified-badge" title="Verified LandConnect User" class="text-emerald-600">
+                <i data-lucide="badge-check" class="w-4 h-4 fill-emerald-100"></i>
+              </span>
+            </div>
+
+            <div class="flex items-center gap-1.5 justify-center mt-1">
+              <span id="cp-role-badge" class="text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider bg-emerald-100 text-emerald-800">SELLER</span>
+              <span id="cp-phone-sub" class="text-xs text-slate-400 font-mono">+91 98*** **321</span>
+            </div>
+
+            <!-- Live Status Indicator Pill -->
+            <div class="mt-2.5">
+              <span id="cp-status-pill" class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                <span id="cp-status-dot" class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                <span id="cp-status-label">Online</span>
+              </span>
+            </div>
+
+            <!-- WhatsApp 4 Quick Actions -->
+            <div class="grid grid-cols-4 gap-2 w-full mt-4 pt-3 border-t border-slate-100">
+              <button onclick="contactProfileMessageAction()" class="flex flex-col items-center gap-1 p-2 rounded-xl hover:bg-emerald-50 text-slate-700 hover:text-wa-teal transition group">
+                <div class="w-10 h-10 rounded-full bg-slate-100 group-hover:bg-emerald-100 flex items-center justify-center text-wa-teal">
+                  <i data-lucide="message-square" class="w-5 h-5"></i>
+                </div>
+                <span class="text-[10px] font-bold">Message</span>
+              </button>
+
+              <button onclick="contactProfileAudioCallAction()" class="flex flex-col items-center gap-1 p-2 rounded-xl hover:bg-emerald-50 text-slate-700 hover:text-wa-teal transition group">
+                <div class="w-10 h-10 rounded-full bg-slate-100 group-hover:bg-emerald-100 flex items-center justify-center text-wa-teal">
+                  <i data-lucide="phone" class="w-5 h-5"></i>
+                </div>
+                <span class="text-[10px] font-bold">Audio</span>
+              </button>
+
+              <button onclick="contactProfileVideoCallAction()" class="flex flex-col items-center gap-1 p-2 rounded-xl hover:bg-emerald-50 text-slate-700 hover:text-wa-teal transition group">
+                <div class="w-10 h-10 rounded-full bg-slate-100 group-hover:bg-emerald-100 flex items-center justify-center text-wa-teal">
+                  <i data-lucide="video" class="w-5 h-5"></i>
+                </div>
+                <span class="text-[10px] font-bold">Video</span>
+              </button>
+
+              <button onclick="contactProfileMeetingAction()" class="flex flex-col items-center gap-1 p-2 rounded-xl hover:bg-emerald-50 text-slate-700 hover:text-wa-teal transition group">
+                <div class="w-10 h-10 rounded-full bg-slate-100 group-hover:bg-emerald-100 flex items-center justify-center text-wa-teal">
+                  <i data-lucide="users" class="w-5 h-5"></i>
+                </div>
+                <span class="text-[10px] font-bold">Meet</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- 2. WhatsApp "About and Phone Number" Card -->
+          <div class="bg-white rounded-2xl shadow-xs border border-slate-200/80 p-4 space-y-3.5">
+            <h4 class="text-[11px] font-bold text-wa-teal uppercase tracking-wider flex items-center gap-1.5">
+              <i data-lucide="info" class="w-3.5 h-3.5"></i>
+              <span>About and phone number</span>
+            </h4>
+
+            <!-- WhatsApp Status / About -->
+            <div class="flex items-start gap-3">
+              <div class="p-2 bg-emerald-50 text-wa-teal rounded-xl shrink-0 mt-0.5">
+                <i data-lucide="quote" class="w-4 h-4"></i>
+              </div>
+              <div class="min-w-0 flex-1">
+                <p id="cp-bio" class="text-xs font-semibold text-slate-800 break-words leading-relaxed">
+                  Available on LandConnect
+                </p>
+                <p class="text-[10px] text-slate-400 mt-0.5">Status • Bio</p>
+              </div>
+            </div>
+
+            <div class="border-t border-slate-100"></div>
+
+            <!-- Masked Mobile -->
+            <div class="flex items-center gap-3">
+              <div class="p-2 bg-blue-50 text-blue-600 rounded-xl shrink-0">
+                <i data-lucide="phone-call" class="w-4 h-4"></i>
+              </div>
+              <div class="min-w-0 flex-1">
+                <p id="cp-phone" class="text-xs font-bold text-slate-800 font-mono">+91 98*** **321</p>
+                <p class="text-[10px] text-slate-400">Mobile • Masked privacy protection</p>
+              </div>
+            </div>
+
+            <div class="border-t border-slate-100"></div>
+
+            <!-- Email Address -->
+            <div class="flex items-center gap-3">
+              <div class="p-2 bg-purple-50 text-purple-600 rounded-xl shrink-0">
+                <i data-lucide="mail" class="w-4 h-4"></i>
+              </div>
+              <div class="min-w-0 flex-1">
+                <p id="cp-email" class="text-xs font-semibold text-slate-800 truncate">user@landconnect.com</p>
+                <p class="text-[10px] text-slate-400">LandConnect Verified Identity</p>
+              </div>
+            </div>
+
+            <div class="border-t border-slate-100"></div>
+
+            <!-- Member Registration -->
+            <div class="flex items-center gap-3">
+              <div class="p-2 bg-amber-50 text-amber-600 rounded-xl shrink-0">
+                <i data-lucide="calendar" class="w-4 h-4"></i>
+              </div>
+              <div class="min-w-0 flex-1">
+                <p id="cp-joined" class="text-xs font-semibold text-slate-800">November 2026</p>
+                <p class="text-[10px] text-slate-400">Member since</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- 3. Land Parcels / Listings Card -->
+          <div id="cp-listings-section" class="bg-white rounded-2xl shadow-xs border border-slate-200/80 p-4 space-y-3">
+            <div class="flex items-center justify-between">
+              <h4 class="text-[11px] font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                <i data-lucide="map-pin" class="w-3.5 h-3.5 text-wa-teal"></i>
+                <span>Listed Land Parcels</span>
+              </h4>
+              <span id="cp-listings-badge" class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-wa-teal border border-emerald-100">0 plots</span>
+            </div>
+
+            <div id="cp-listings-list" class="space-y-2">
+              <!-- Dynamically populated or empty -->
+            </div>
+          </div>
+
+          <!-- 4. Media & Chat Settings Card -->
+          <div class="bg-white rounded-2xl shadow-xs border border-slate-200/80 p-4 space-y-3">
+            <h4 class="text-[11px] font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+              <i data-lucide="sliders" class="w-3.5 h-3.5 text-wa-teal"></i>
+              <span>Chat Settings & Media</span>
+            </h4>
+
+            <div class="flex items-center justify-between py-1">
+              <div class="flex items-center gap-2.5">
+                <div class="p-1.5 bg-slate-100 text-slate-600 rounded-lg"><i data-lucide="bell" class="w-4 h-4"></i></div>
+                <div>
+                  <p class="text-xs font-semibold text-slate-800">Mute notifications</p>
+                  <p class="text-[10px] text-slate-400">Silence message alerts from this user</p>
+                </div>
+              </div>
+              <label class="relative inline-flex items-center cursor-pointer">
+                <input type="checkbox" id="cp-mute-toggle" onchange="toggleMuteContact()" class="sr-only peer">
+                <div class="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-wa-teal"></div>
+              </label>
+            </div>
+
+            <div class="border-t border-slate-100"></div>
+
+            <div class="flex items-center justify-between py-1">
+              <div class="flex items-center gap-2.5">
+                <div class="p-1.5 bg-slate-100 text-slate-600 rounded-lg"><i data-lucide="image" class="w-4 h-4"></i></div>
+                <div>
+                  <p class="text-xs font-semibold text-slate-800">Media, links, and docs</p>
+                  <p id="cp-media-stats" class="text-[10px] text-slate-400">0 messages • 0 meeting rooms</p>
+                </div>
+              </div>
+              <i data-lucide="chevron-right" class="w-4 h-4 text-slate-400"></i>
+            </div>
+
+            <div class="border-t border-slate-100"></div>
+
+            <!-- Encryption Notice -->
+            <div class="p-3 bg-emerald-50/70 rounded-xl border border-emerald-100 flex items-start gap-2.5">
+              <i data-lucide="lock" class="w-4 h-4 text-wa-teal shrink-0 mt-0.5"></i>
+              <div class="text-[11px] leading-relaxed">
+                <p class="font-bold text-wa-tealDark">End-to-end encrypted</p>
+                <p class="text-slate-600 mt-0.5">Messages and calls are end-to-end encrypted. No one outside of this chat can read or listen to them.</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- 5. Block & Report Actions -->
+          <div class="bg-white rounded-2xl shadow-xs border border-slate-200/80 p-2 space-y-1">
+            <button onclick="handleBlockContact()" class="w-full text-left px-3 py-2.5 rounded-xl hover:bg-rose-50 text-rose-600 font-bold text-xs flex items-center gap-2.5 transition">
+              <i data-lucide="ban" class="w-4 h-4"></i>
+              <span id="cp-block-label">Block Contact</span>
+            </button>
+            <button onclick="handleReportContact()" class="w-full text-left px-3 py-2.5 rounded-xl hover:bg-rose-50 text-rose-600 font-bold text-xs flex items-center gap-2.5 transition">
+              <i data-lucide="flag" class="w-4 h-4"></i>
+              <span>Report Contact</span>
+            </button>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- ================= FULLSCREEN AVATAR MODAL ================= -->
+      <div id="avatar-preview-modal" class="hidden fixed inset-0 bg-black/90 z-60 flex flex-col items-center justify-center p-4 backdrop-blur-sm">
+        <button onclick="closeAvatarFullscreen()" class="absolute top-4 right-4 p-2 text-white/80 hover:text-white rounded-full bg-white/10 hover:bg-white/20 transition">
+          <i data-lucide="x" class="w-6 h-6"></i>
+        </button>
+        <div class="max-w-md w-full flex flex-col items-center gap-3">
+          <img id="avatar-preview-img" src="" class="w-72 h-72 rounded-2xl object-cover shadow-2xl border-2 border-white/20">
+          <p id="avatar-preview-name" class="text-white font-bold text-base mt-2"></p>
         </div>
       </div>
 
