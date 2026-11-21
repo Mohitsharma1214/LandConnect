@@ -4,7 +4,7 @@ import asyncio
 import base64
 import uuid
 from decimal import Decimal
-from datetime import datetime
+from datetime import datetime, timezone
 
 from starlette.applications import Starlette
 from starlette.responses import JSONResponse, Response, FileResponse
@@ -25,7 +25,10 @@ def serialize_dict(d: dict) -> dict:
         if isinstance(v, Decimal):
             clean[k] = float(v)
         elif isinstance(v, datetime):
-            clean[k] = v.isoformat()
+            if v.tzinfo is None:
+                clean[k] = v.isoformat() + "Z"
+            else:
+                clean[k] = v.isoformat()
         else:
             clean[k] = v
     return clean
@@ -121,7 +124,17 @@ def db_save_message(sender_id, receiver_id, listing_id, content, message_type):
         created_at = row["created_at"]
         conn.commit()
         cursor.close()
-        return msg_id, str(created_at)
+        if isinstance(created_at, datetime):
+            if created_at.tzinfo is None:
+                created_at_val = created_at.isoformat() + "Z"
+            else:
+                created_at_val = created_at.isoformat()
+        else:
+            created_at_str = str(created_at)
+            if not created_at_str.endswith("Z") and "+" not in created_at_str:
+                created_at_str = created_at_str.replace(" ", "T") + "Z"
+            created_at_val = created_at_str
+        return msg_id, created_at_val
     except Exception as e:
         print("Database save message error:", e)
         return None, None
@@ -781,7 +794,7 @@ async def websocket_signaling(websocket: WebSocket):
                         "listing_id": listing_id,
                         "content": content,
                         "message_type": message_type,
-                        "created_at": datetime.utcnow().isoformat(),
+                        "created_at": datetime.now(timezone.utc).isoformat(),
                         "sender_name": data.get("sender_name", ""),
                         "sender_avatar": data.get("sender_avatar", ""),
                         "listing_title": data.get("listing_title", ""),

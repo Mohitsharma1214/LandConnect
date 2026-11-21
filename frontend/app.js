@@ -1217,9 +1217,24 @@ function saveArchivedChatIds(ids) {
   localStorage.setItem(`landconnect_archived_${uid}`, JSON.stringify(ids));
 }
 
+function parseDateSafe(dateVal) {
+  if (!dateVal) return 0;
+  if (dateVal instanceof Date) return dateVal.getTime();
+  let str = String(dateVal).trim();
+  if (!str) return 0;
+  // If date string has no timezone indicator (no 'Z' and no '+' and no '-HH:MM'), treat it as UTC from server
+  if (!str.endsWith('Z') && !str.includes('+') && !/[0-9]{4}-[0-9]{2}-[0-9]{2}T.*-[0-9]{2}:[0-9]{2}/.test(str)) {
+    str = str.replace(' ', 'T') + 'Z';
+  }
+  const d = new Date(str);
+  return isNaN(d.getTime()) ? 0 : d.getTime();
+}
+
 function formatChatTime(isoString) {
   if (!isoString) return '';
-  const date = new Date(isoString);
+  const timestamp = parseDateSafe(isoString);
+  if (!timestamp) return '';
+  const date = new Date(timestamp);
   const now = new Date();
   const isToday = date.toDateString() === now.toDateString();
   const yesterday = new Date(now);
@@ -1329,11 +1344,14 @@ function renderContactsList() {
     if (a.is_pinned && !b.is_pinned) return -1;
     if (!a.is_pinned && b.is_pinned) return 1;
 
-    if (a.last_message_time && b.last_message_time) {
-      return new Date(b.last_message_time) - new Date(a.last_message_time);
+    const timeA = parseDateSafe(a.last_message_time);
+    const timeB = parseDateSafe(b.last_message_time);
+
+    if (timeA && timeB) {
+      return timeB - timeA;
     }
-    if (a.last_message_time && !b.last_message_time) return -1;
-    if (!a.last_message_time && b.last_message_time) return 1;
+    if (timeA && !timeB) return -1;
+    if (!timeA && timeB) return 1;
 
     return a.name.localeCompare(b.name);
   });
@@ -1776,7 +1794,7 @@ function updateMessageStatus(tempId, permanentId) {
 
 function generateMessageHtml(m, isPending = false) {
   const isMine = currentUser && (Number(m.sender_id) === Number(currentUser.id));
-  const time = m.created_at ? new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const time = m.created_at ? new Date(parseDateSafe(m.created_at)).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   const bubbleId = m.tempId ? `msg-bubble-${m.tempId}` : `msg-bubble-${m.id}`;
   const statusId = m.tempId ? `msg-status-${m.tempId}` : `msg-status-${m.id}`;
 
@@ -2075,6 +2093,7 @@ async function sendChatMessage() {
 
   // Update in-memory recent conversation & promote to top
   const peerId = Number(activeChatPeer.id);
+  const nowIso = new Date().toISOString();
   let conv = recentConversations.find(c => Number(c.peer_id) === peerId);
   if (!conv) {
     conv = {
@@ -2084,7 +2103,7 @@ async function sendChatMessage() {
       peer_role: activeChatPeer.role || 'buyer',
       last_message: content,
       last_message_type: 'text',
-      last_message_time: new Date().toISOString(),
+      last_message_time: nowIso,
       last_message_sender_id: currentUser ? Number(currentUser.id) : 0,
       unread_count: 0
     };
@@ -2092,8 +2111,11 @@ async function sendChatMessage() {
   } else {
     conv.last_message = content;
     conv.last_message_type = 'text';
-    conv.last_message_time = new Date().toISOString();
+    conv.last_message_time = nowIso;
     conv.last_message_sender_id = currentUser ? Number(currentUser.id) : 0;
+    const idx = recentConversations.indexOf(conv);
+    if (idx > -1) recentConversations.splice(idx, 1);
+    recentConversations.unshift(conv);
   }
   renderContactsList();
 
@@ -3185,6 +3207,7 @@ function initWebSocket() {
 
           // Real-time update of recent conversations list & unread counters
           const peerId = (msgSenderId === myId) ? msgReceiverId : msgSenderId;
+          const msgTime = msg.created_at || new Date().toISOString();
           let conv = recentConversations.find(c => Number(c.peer_id) === peerId);
           if (!conv) {
             conv = {
@@ -3194,7 +3217,7 @@ function initWebSocket() {
               peer_role: 'buyer',
               last_message: msg.content,
               last_message_type: msg.message_type,
-              last_message_time: msg.created_at,
+              last_message_time: msgTime,
               last_message_sender_id: msgSenderId,
               unread_count: isCurrentChat ? 0 : 1
             };
@@ -3202,11 +3225,14 @@ function initWebSocket() {
           } else {
             conv.last_message = msg.content;
             conv.last_message_type = msg.message_type;
-            conv.last_message_time = msg.created_at;
+            conv.last_message_time = msgTime;
             conv.last_message_sender_id = msgSenderId;
             if (!isCurrentChat) {
               conv.unread_count = (Number(conv.unread_count) || 0) + 1;
             }
+            const idx = recentConversations.indexOf(conv);
+            if (idx > -1) recentConversations.splice(idx, 1);
+            recentConversations.unshift(conv);
           }
 
           renderContactsList();
