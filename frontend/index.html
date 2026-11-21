@@ -674,7 +674,7 @@
               <i data-lucide="arrow-left" class="w-5 h-5"></i>
             </button>
             <div onclick="openContactProfile(activeChatPeer ? activeChatPeer.id : null)" class="flex items-center gap-2 min-w-0 flex-1 cursor-pointer hover:opacity-90 active:opacity-75 transition group" title="View contact info & status">
-              <img id="chat-peer-avatar" src="" class="w-9 h-9 rounded-full object-cover border border-white/20 shrink-0 group-hover:scale-105 transition-transform">
+              <img id="chat-peer-avatar" src="" onerror="this.onerror=null; this.src='https://ui-avatars.com/api/?name=' + encodeURIComponent(activeChatPeer ? activeChatPeer.name : 'User') + '&background=075E54&color=fff'" class="w-9 h-9 rounded-full object-cover border border-white/20 shrink-0 group-hover:scale-105 transition-transform">
               <div class="min-w-0 flex-1">
                 <div class="flex items-center gap-1.5">
                   <h3 id="chat-peer-name" class="font-bold text-sm leading-tight truncate max-w-[130px]">Name</h3>

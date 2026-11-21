@@ -1774,7 +1774,13 @@ async function startChatWithUser(userId, name, avatar, role) {
   const messagesContainer = document.getElementById('chat-messages-container');
 
   if (peerName) peerName.textContent = displayName;
-  if (peerAvatar) peerAvatar.src = avatar;
+  if (peerAvatar) {
+    peerAvatar.onerror = function() {
+      this.onerror = null;
+      this.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(displayName || 'User')}&background=075E54&color=fff`;
+    };
+    peerAvatar.src = avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(displayName || 'User')}&background=075E54&color=fff`;
+  }
   if (peerRole) peerRole.textContent = role;
 
   // Block/hide Audio call, Video call, and Meeting room buttons on self-chat

@@ -8,4 +8,3 @@ node_modules/
 
 .neon
 .env.local
-backend/storage_bucket/
