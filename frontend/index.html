@@ -6,7 +6,9 @@
   <meta name="theme-color" content="#075E54">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <link rel="manifest" href="/static/manifest.json">
+  <meta name="apple-mobile-web-app-title" content="LandConnect">
+  <link rel="apple-touch-icon" href="https://img.icons8.com/color/192/whatsapp--v1.png">
+  <link rel="manifest" href="/manifest.json">
   <title>LandConnect – WhatsApp Inspired Real Estate & Calling</title>
   <!-- Tailwind CSS CDN -->
   <script src="https://cdn.tailwindcss.com"></script>
@@ -2208,6 +2210,11 @@
   <script src="/static/app.js"></script>
   <script>
     lucide.createIcons();
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/sw.js').catch(err => console.log('SW reg error:', err));
+      });
+    }
   </script>
 </body>
 </html>

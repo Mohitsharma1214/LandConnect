@@ -1159,6 +1159,18 @@ async def serve_index(request):
         return FileResponse(index_file)
     return Response("LandConnect Frontend is building...", media_type="text/plain")
 
+async def serve_sw(request):
+    sw_file = os.path.join(FRONTEND_DIR, "sw.js")
+    if os.path.exists(sw_file):
+        return FileResponse(sw_file, media_type="application/javascript")
+    return Response("// SW not found", media_type="application/javascript")
+
+async def serve_manifest(request):
+    m_file = os.path.join(FRONTEND_DIR, "manifest.json")
+    if os.path.exists(m_file):
+        return FileResponse(m_file, media_type="application/manifest+json")
+    return Response("{}", media_type="application/manifest+json")
+
 routes = [
     Route("/api/auth/register", api_register, methods=["POST"]),
     Route("/api/auth/login", api_login, methods=["POST"]),
@@ -1179,6 +1191,8 @@ routes = [
     Route("/api/calls/history", api_call_logs, methods=["GET"]),
     Route("/api/meeting-rooms/history", api_meeting_room_history, methods=["GET"]),
     WebSocketRoute("/ws", websocket_signaling),
+    Route("/sw.js", serve_sw),
+    Route("/manifest.json", serve_manifest),
     Route("/", serve_index),
 ]
 
