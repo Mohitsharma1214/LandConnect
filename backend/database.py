@@ -1,99 +1,106 @@
-import sqlite3
 import os
-import json
 import hashlib
-import hmac
+import json
+import psycopg2
+from psycopg2.extras import RealDictCursor
+from dotenv import load_dotenv
 
-DB_PATH = os.path.join(os.path.dirname(__file__), "landconnect.db")
+# Load environment variables from .env
+ENV_PATH = os.path.join(os.path.dirname(__file__), ".env")
+load_dotenv(ENV_PATH)
+
+DATABASE_URL = os.environ.get("DATABASE_URL", "").strip()
 
 def get_connection():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
+    if not DATABASE_URL:
+        raise ValueError("DATABASE_URL is not set. Please provide your Neon DB PostgreSQL connection string in backend/.env")
+    
+    # Neon DB requires sslmode=require
+    conn = psycopg2.connect(DATABASE_URL, cursor_factory=RealDictCursor)
     return conn
 
 def hash_password(password: str, salt: str = "landconnect_salt_2026") -> str:
     return hashlib.sha256((password + salt).encode('utf-8')).hexdigest()
 
 def init_db():
+    if not DATABASE_URL:
+        print("Waiting for Neon DB DATABASE_URL to be set...")
+        return
+
     conn = get_connection()
     cursor = conn.cursor()
 
-    # Users table
+    # Users Table
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS users (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        name TEXT NOT NULL,
-        email TEXT UNIQUE NOT NULL,
-        password_hash TEXT NOT NULL,
-        role TEXT NOT NULL CHECK(role IN ('buyer', 'seller', 'broker')),
-        phone_masked TEXT NOT NULL,
+        id SERIAL PRIMARY KEY,
+        name VARCHAR(255) NOT NULL,
+        email VARCHAR(255) UNIQUE NOT NULL,
+        password_hash VARCHAR(255) NOT NULL,
+        role VARCHAR(50) NOT NULL CHECK(role IN ('buyer', 'seller', 'broker')),
+        phone_masked VARCHAR(50) NOT NULL,
         avatar TEXT,
         bio TEXT,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
     );
     """)
 
-    # Land Listings table
+    # Land Listings Table
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS listings (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        title TEXT NOT NULL,
+        id SERIAL PRIMARY KEY,
+        title VARCHAR(255) NOT NULL,
         description TEXT NOT NULL,
-        price REAL NOT NULL,
-        price_unit TEXT DEFAULT 'total',
-        area_sqft REAL NOT NULL,
-        property_type TEXT NOT NULL,
+        price NUMERIC NOT NULL,
+        price_unit VARCHAR(50) DEFAULT 'total',
+        area_sqft NUMERIC NOT NULL,
+        property_type VARCHAR(100) NOT NULL,
         location_address TEXT NOT NULL,
-        city TEXT NOT NULL,
-        state TEXT NOT NULL,
-        latitude REAL NOT NULL,
-        longitude REAL NOT NULL,
-        images TEXT NOT NULL, -- JSON array of image URLs
-        features TEXT, -- JSON array of features
-        owner_id INTEGER NOT NULL,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (owner_id) REFERENCES users(id)
+        city VARCHAR(100) NOT NULL,
+        state VARCHAR(100) NOT NULL,
+        latitude DOUBLE PRECISION NOT NULL,
+        longitude DOUBLE PRECISION NOT NULL,
+        images TEXT NOT NULL,
+        features TEXT,
+        owner_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
     );
     """)
 
-    # Messages table
+    # Messages Table
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS messages (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        sender_id INTEGER NOT NULL,
-        receiver_id INTEGER NOT NULL,
-        listing_id INTEGER,
+        id SERIAL PRIMARY KEY,
+        sender_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        receiver_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        listing_id INTEGER REFERENCES listings(id) ON DELETE SET NULL,
         content TEXT NOT NULL,
-        message_type TEXT DEFAULT 'text',
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        is_read INTEGER DEFAULT 0,
-        FOREIGN KEY (sender_id) REFERENCES users(id),
-        FOREIGN KEY (receiver_id) REFERENCES users(id),
-        FOREIGN KEY (listing_id) REFERENCES listings(id)
+        message_type VARCHAR(50) DEFAULT 'text',
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        is_read INTEGER DEFAULT 0
     );
     """)
 
-    # Call logs table
+    # Call Logs Table
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS call_logs (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        caller_id INTEGER NOT NULL,
-        receiver_id INTEGER NOT NULL,
-        listing_id INTEGER,
-        call_type TEXT NOT NULL CHECK(call_type IN ('audio', 'video')),
-        status TEXT NOT NULL CHECK(status IN ('completed', 'missed', 'rejected', 'busy')),
+        id SERIAL PRIMARY KEY,
+        caller_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        receiver_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        listing_id INTEGER REFERENCES listings(id) ON DELETE SET NULL,
+        call_type VARCHAR(20) NOT NULL CHECK(call_type IN ('audio', 'video')),
+        status VARCHAR(20) NOT NULL CHECK(status IN ('completed', 'missed', 'rejected', 'busy')),
         duration_seconds INTEGER DEFAULT 0,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (caller_id) REFERENCES users(id),
-        FOREIGN KEY (receiver_id) REFERENCES users(id)
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
     );
     """)
 
     conn.commit()
 
-    # Seed demo users if empty
+    # Seed Default Demonstration Personas if users table is empty
     cursor.execute("SELECT COUNT(*) as count FROM users")
-    if cursor.fetchone()["count"] == 0:
+    res = cursor.fetchone()
+    if res["count"] == 0:
         seed_users = [
             (
                 "Aarav Patel (Buyer)",
@@ -123,13 +130,16 @@ def init_db():
                 "Certified RERA Real Estate Broker specializing in greenfield projects & high ROI land."
             )
         ]
-        cursor.executemany("""
-            INSERT INTO users (name, email, password_hash, role, phone_masked, avatar, bio)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        """, seed_users)
+        for u in seed_users:
+            cursor.execute("""
+                INSERT INTO users (name, email, password_hash, role, phone_masked, avatar, bio)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (email) DO NOTHING
+            """, u)
         conn.commit()
-        print("Seeded 3 default test users (Buyer, Seller, Broker).")
+        print("Seeded demo users into Neon PostgreSQL.")
 
+    cursor.close()
     conn.close()
 
 if __name__ == "__main__":

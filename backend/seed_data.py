@@ -1,5 +1,6 @@
 import json
-from database import get_connection
+import os
+from database import get_connection, DATABASE_URL
 
 SAMPLE_LISTINGS = [
     {
@@ -7,7 +8,7 @@ SAMPLE_LISTINGS = [
         "description": "Fertile agricultural land with clear legal title, perimeter fencing, borewell connection, and 30ft road frontage. Just 15 mins drive from Kempegowda International Airport.",
         "price": 8500000,
         "price_unit": "total",
-        "area_sqft": 87120, # 2 Acres
+        "area_sqft": 87120,
         "property_type": "Agricultural",
         "location_address": "Devanahalli North, Near Airport Corridor",
         "city": "Bengaluru",
@@ -82,15 +83,18 @@ SAMPLE_LISTINGS = [
 ]
 
 def seed_listings():
+    if not DATABASE_URL:
+        return
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute("SELECT COUNT(*) as count FROM listings")
-    if cursor.fetchone()["count"] == 0:
+    res = cursor.fetchone()
+    if res["count"] == 0:
         for listing in SAMPLE_LISTINGS:
             cursor.execute("""
                 INSERT INTO listings (title, description, price, price_unit, area_sqft, property_type,
                                       location_address, city, state, latitude, longitude, images, features, owner_id)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """, (
                 listing["title"], listing["description"], listing["price"], listing["price_unit"],
                 listing["area_sqft"], listing["property_type"], listing["location_address"],
@@ -98,7 +102,8 @@ def seed_listings():
                 listing["images"], listing["features"], listing["owner_id"]
             ))
         conn.commit()
-        print(f"Seeded {len(SAMPLE_LISTINGS)} sample land listings.")
+        print(f"Seeded {len(SAMPLE_LISTINGS)} sample land listings into Neon PostgreSQL.")
+    cursor.close()
     conn.close()
 
 if __name__ == "__main__":

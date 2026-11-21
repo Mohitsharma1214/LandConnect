@@ -20,14 +20,13 @@ def decode_jwt_token(token: str):
         payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
         payload["sub"] = int(payload["sub"])
         return payload
-    except Exception as e:
+    except Exception:
         return None
 
 def register_user(name: str, email: str, password: str, role: str, phone: str = ""):
     if role not in ("buyer", "seller", "broker"):
         return {"error": "Invalid role. Must be 'buyer', 'seller', or 'broker'."}
     
-    # Mask phone number to protect privacy
     if phone and len(phone) >= 10:
         clean_phone = phone.strip()
         masked_phone = f"{clean_phone[:3]}*** **{clean_phone[-3:]}"
@@ -46,10 +45,11 @@ def register_user(name: str, email: str, password: str, role: str, phone: str = 
         password_hash = hash_password(password)
         cursor.execute("""
             INSERT INTO users (name, email, password_hash, role, phone_masked, avatar)
-            VALUES (?, ?, ?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s, %s, %s)
+            RETURNING id;
         """, (name, email.lower().strip(), password_hash, role, masked_phone, avatar_by_role.get(role)))
+        user_id = cursor.fetchone()["id"]
         conn.commit()
-        user_id = cursor.lastrowid
         token = create_jwt_token(user_id, role, email)
         return {
             "token": token,
@@ -63,17 +63,19 @@ def register_user(name: str, email: str, password: str, role: str, phone: str = 
             }
         }
     except Exception as e:
-        if "UNIQUE constraint failed: users.email" in str(e):
+        conn.rollback()
+        if "unique constraint" in str(e).lower() or "duplicate key" in str(e).lower():
             return {"error": "An account with this email already exists."}
         return {"error": str(e)}
     finally:
+        cursor.close()
         conn.close()
 
 def login_user(email: str, password: str):
     conn = get_connection()
     cursor = conn.cursor()
     try:
-        cursor.execute("SELECT * FROM users WHERE LOWER(email) = ?", (email.lower().strip(),))
+        cursor.execute("SELECT * FROM users WHERE LOWER(email) = %s", (email.lower().strip(),))
         user = cursor.fetchone()
         if not user:
             return {"error": "Invalid email or password."}
@@ -92,20 +94,25 @@ def login_user(email: str, password: str):
                 "role": user["role"],
                 "phone_masked": user["phone_masked"],
                 "avatar": user["avatar"],
-                "bio": user["bio"]
+                "bio": user.get("bio")
             }
         }
     finally:
+        cursor.close()
         conn.close()
 
 def get_user_profile(user_id: int):
     conn = get_connection()
     cursor = conn.cursor()
     try:
-        cursor.execute("SELECT id, name, email, role, phone_masked, avatar, bio, created_at FROM users WHERE id = ?", (user_id,))
+        cursor.execute("SELECT id, name, email, role, phone_masked, avatar, bio, created_at FROM users WHERE id = %s", (user_id,))
         user = cursor.fetchone()
         if user:
-            return dict(user)
+            d = dict(user)
+            if "created_at" in d and d["created_at"]:
+                d["created_at"] = str(d["created_at"])
+            return d
         return None
     finally:
+        cursor.close()
         conn.close()

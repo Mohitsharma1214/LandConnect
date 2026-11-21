@@ -1,6 +1,9 @@
 import os
 import json
 import asyncio
+from decimal import Decimal
+from datetime import datetime
+
 from starlette.applications import Starlette
 from starlette.responses import JSONResponse, Response, FileResponse
 from starlette.routing import Route, WebSocketRoute, Mount
@@ -9,13 +12,29 @@ from starlette.middleware.cors import CORSMiddleware
 from starlette.staticfiles import StaticFiles
 from starlette.websockets import WebSocket, WebSocketDisconnect
 
-from database import init_db, get_connection
+from database import init_db, get_connection, DATABASE_URL
 from auth import register_user, login_user, decode_jwt_token, get_user_profile
 from seed_data import seed_listings
 
-# Ensure DB and seeds are initialized
-init_db()
-seed_listings()
+# Helper to serialize psycopg2 rows (handles Decimal and datetime)
+def serialize_dict(d: dict) -> dict:
+    clean = {}
+    for k, v in d.items():
+        if isinstance(v, Decimal):
+            clean[k] = float(v)
+        elif isinstance(v, datetime):
+            clean[k] = v.isoformat()
+        else:
+            clean[k] = v
+    return clean
+
+# Try initializing database if DATABASE_URL is set
+if DATABASE_URL:
+    try:
+        init_db()
+        seed_listings()
+    except Exception as e:
+        print("Warning during DB initialization:", e)
 
 FRONTEND_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "frontend")
 
@@ -91,14 +110,15 @@ async def api_me(request):
     profile = get_user_profile(payload["sub"])
     if not profile:
         return JSONResponse({"error": "User not found."}, status_code=404)
-    return JSONResponse(profile)
+    return JSONResponse(serialize_dict(profile))
 
 async def api_users(request):
-    """List available users/contacts with their role and masked phone (for chat & call initiation)"""
+    """List available users/contacts for chat & calling"""
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute("SELECT id, name, email, role, phone_masked, avatar, bio FROM users ORDER BY id ASC")
-    users = [dict(row) for row in cursor.fetchall()]
+    users = [serialize_dict(dict(row)) for row in cursor.fetchall()]
+    cursor.close()
     conn.close()
     return JSONResponse(users)
 
@@ -114,10 +134,11 @@ async def api_get_listings(request):
     rows = cursor.fetchall()
     listings = []
     for r in rows:
-        d = dict(r)
-        d["images"] = json.loads(d["images"]) if d["images"] else []
-        d["features"] = json.loads(d["features"]) if d["features"] else []
+        d = serialize_dict(dict(r))
+        d["images"] = json.loads(d["images"]) if isinstance(d["images"], str) else (d["images"] or [])
+        d["features"] = json.loads(d["features"]) if isinstance(d["features"], str) else (d["features"] or [])
         listings.append(d)
+    cursor.close()
     conn.close()
     return JSONResponse(listings)
 
@@ -153,10 +174,12 @@ async def api_create_listing(request):
         cursor.execute("""
             INSERT INTO listings (title, description, price, price_unit, area_sqft, property_type,
                                   location_address, city, state, latitude, longitude, images, features, owner_id)
-            VALUES (?, ?, ?, 'total', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (%s, %s, %s, 'total', %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            RETURNING id;
         """, (title, description, price, area_sqft, property_type, location_address, city, state, latitude, longitude, images, features, owner_id))
+        listing_id = cursor.fetchone()["id"]
         conn.commit()
-        listing_id = cursor.lastrowid
+        cursor.close()
         conn.close()
 
         return JSONResponse({"success": True, "id": listing_id, "message": "Land listing created successfully."})
@@ -164,7 +187,7 @@ async def api_create_listing(request):
         return JSONResponse({"error": str(e)}, status_code=400)
 
 async def api_get_messages(request):
-    other_user_id = request.path_params["user_id"]
+    other_user_id = int(request.path_params["user_id"])
     auth_header = request.headers.get("Authorization", "")
     token = auth_header.replace("Bearer ", "") if "Bearer " in auth_header else auth_header
     payload = decode_jwt_token(token)
@@ -179,11 +202,12 @@ async def api_get_messages(request):
         FROM messages m
         JOIN users s ON m.sender_id = s.id
         JOIN users r ON m.receiver_id = r.id
-        WHERE (m.sender_id = ? AND m.receiver_id = ?)
-           OR (m.sender_id = ? AND m.receiver_id = ?)
+        WHERE (m.sender_id = %s AND m.receiver_id = %s)
+           OR (m.sender_id = %s AND m.receiver_id = %s)
         ORDER BY m.created_at ASC
     """, (my_id, other_user_id, other_user_id, my_id))
-    rows = [dict(r) for r in cursor.fetchall()]
+    rows = [serialize_dict(dict(r)) for r in cursor.fetchall()]
+    cursor.close()
     conn.close()
     return JSONResponse(rows)
 
@@ -196,7 +220,7 @@ async def api_send_message(request):
     
     data = await request.json()
     sender_id = payload["sub"]
-    receiver_id = data.get("receiver_id")
+    receiver_id = int(data.get("receiver_id"))
     listing_id = data.get("listing_id")
     content = data.get("content", "").strip()
 
@@ -207,22 +231,23 @@ async def api_send_message(request):
     cursor = conn.cursor()
     cursor.execute("""
         INSERT INTO messages (sender_id, receiver_id, listing_id, content)
-        VALUES (?, ?, ?, ?)
+        VALUES (%s, %s, %s, %s)
+        RETURNING id;
     """, (sender_id, receiver_id, listing_id, content))
+    msg_id = cursor.fetchone()["id"]
     conn.commit()
-    msg_id = cursor.lastrowid
 
-    # Retrieve saved message with sender name
     cursor.execute("""
         SELECT m.*, s.name as sender_name, s.avatar as sender_avatar
         FROM messages m
         JOIN users s ON m.sender_id = s.id
-        WHERE m.id = ?
+        WHERE m.id = %s
     """, (msg_id,))
-    msg_data = dict(cursor.fetchone())
+    msg_data = serialize_dict(dict(cursor.fetchone()))
+    cursor.close()
     conn.close()
 
-    # Dispatch via WebSocket to receiver
+    # Dispatch via WebSocket
     await send_to_user(receiver_id, {
         "type": "new_message",
         "message": msg_data
@@ -247,11 +272,12 @@ async def api_call_logs(request):
         FROM call_logs c
         JOIN users u_caller ON c.caller_id = u_caller.id
         JOIN users u_rec ON c.receiver_id = u_rec.id
-        WHERE c.caller_id = ? OR c.receiver_id = ?
+        WHERE c.caller_id = %s OR c.receiver_id = %s
         ORDER BY c.created_at DESC
         LIMIT 30
     """, (user_id, user_id))
-    logs = [dict(r) for r in cursor.fetchall()]
+    logs = [serialize_dict(dict(r)) for r in cursor.fetchall()]
+    cursor.close()
     conn.close()
     return JSONResponse(logs)
 
@@ -283,13 +309,11 @@ async def websocket_signaling(websocket: WebSocket):
                     }))
 
             elif msg_type == "initiate_call":
-                # Caller sends call invitation
                 receiver_id = data.get("receiverId")
-                call_type = data.get("callType", "video") # 'audio' or 'video'
+                call_type = data.get("callType", "video")
                 listing_id = data.get("listingId")
                 caller_info = data.get("callerInfo", {})
                 
-                # Forward incoming_call to receiver
                 await send_to_user(receiver_id, {
                     "type": "incoming_call",
                     "callerId": authenticated_user_id,
@@ -322,22 +346,21 @@ async def websocket_signaling(websocket: WebSocket):
                         "type": "call_ended",
                         "by": authenticated_user_id
                     })
-                # Log call
-                if target_user_id and authenticated_user_id:
+                if target_user_id and authenticated_user_id and DATABASE_URL:
                     try:
                         conn = get_connection()
                         c = conn.cursor()
                         c.execute("""
                             INSERT INTO call_logs (caller_id, receiver_id, call_type, status, duration_seconds)
-                            VALUES (?, ?, ?, 'completed', ?)
+                            VALUES (%s, %s, %s, 'completed', %s)
                         """, (authenticated_user_id, target_user_id, call_type, duration))
                         conn.commit()
+                        c.close()
                         conn.close()
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        print("Error logging call:", e)
 
             elif msg_type in ("webrtc_offer", "webrtc_answer", "ice_candidate"):
-                # Forward raw WebRTC signaling data directly to the peer
                 target_id = data.get("targetUserId")
                 if target_id:
                     await send_to_user(target_id, data)
