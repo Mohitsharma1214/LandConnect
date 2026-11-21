@@ -32,10 +32,78 @@ const rtcConfig = {
   ]
 };
 
+// ================= SAVED / FAVORITE LAND LISTINGS =================
+let savedListingIds = JSON.parse(localStorage.getItem('landconnect_saved') || '[]');
+let isFilteringSaved = false;
+
+function isFavorite(id) {
+  return savedListingIds.includes(id);
+}
+
+function updateSavedCounterUI() {
+  const btnText = document.getElementById('saved-btn-text');
+  const icon = document.getElementById('icon-saved-btn');
+  if (btnText) btnText.textContent = `Saved (${savedListingIds.length})`;
+  if (icon) {
+    if (isFilteringSaved) {
+      icon.className = 'w-3.5 h-3.5 fill-rose-500 text-rose-500';
+    } else {
+      icon.className = savedListingIds.length > 0 ? 'w-3.5 h-3.5 text-rose-500' : 'w-3.5 h-3.5 text-slate-400';
+    }
+  }
+}
+
+function toggleFavoriteListing(id) {
+  if (savedListingIds.includes(id)) {
+    savedListingIds = savedListingIds.filter(x => x !== id);
+  } else {
+    savedListingIds.push(id);
+  }
+  localStorage.setItem('landconnect_saved', JSON.stringify(savedListingIds));
+  updateSavedCounterUI();
+
+  if (isFilteringSaved) {
+    filterSavedListings();
+  } else {
+    renderListings(allListings);
+  }
+}
+
+function toggleDetailPropertyFavorite() {
+  if (activePropertyDetailListing) {
+    toggleFavoriteListing(activePropertyDetailListing.id);
+    const favIcon = document.getElementById('icon-detail-fav');
+    if (favIcon) {
+      favIcon.className = isFavorite(activePropertyDetailListing.id)
+        ? 'w-4 h-4 fill-rose-500 text-rose-500'
+        : 'w-4 h-4 text-white';
+    }
+  }
+}
+
+function toggleSavedFilter() {
+  isFilteringSaved = !isFilteringSaved;
+  const btn = document.getElementById('btn-toggle-saved');
+  if (isFilteringSaved) {
+    if (btn) btn.classList.add('bg-rose-50', 'border-rose-300', 'text-rose-700');
+    filterSavedListings();
+  } else {
+    if (btn) btn.classList.remove('bg-rose-50', 'border-rose-300', 'text-rose-700');
+    renderListings(allListings);
+  }
+  updateSavedCounterUI();
+}
+
+function filterSavedListings() {
+  const filtered = allListings.filter(l => savedListingIds.includes(l.id));
+  renderListings(filtered);
+}
+
 // --- Initialization ---
 document.addEventListener('DOMContentLoaded', async () => {
   updateClock();
   setInterval(updateClock, 10000);
+  updateSavedCounterUI();
 
   if (currentToken) {
     // Optimistically show main app immediately (zero flicker)
@@ -321,7 +389,47 @@ function applyUserRoleUI() {
     if (myPropertiesSection) myPropertiesSection.classList.add('hidden');
   }
 
+  highlightActiveRoleButton(currentUser.role);
   if (window.lucide) lucide.createIcons();
+}
+
+async function switchUserRole(newRole) {
+  if (!currentToken) return;
+  try {
+    const res = await fetch(`${API_BASE}/api/auth/role`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${currentToken}`
+      },
+      body: JSON.stringify({ role: newRole })
+    });
+    const data = await res.json();
+    if (data.token) {
+      currentToken = data.token;
+      localStorage.setItem('landconnect_token', currentToken);
+      currentUser = data.user;
+      applyUserRoleUI();
+      await loadListings();
+      alert(`Role successfully switched to: ${newRole.toUpperCase()}`);
+    } else {
+      alert(data.error || 'Failed to switch role');
+    }
+  } catch (err) {
+    console.error('Error switching role:', err);
+  }
+}
+
+function highlightActiveRoleButton(role) {
+  ['buyer', 'seller', 'broker'].forEach(r => {
+    const btn = document.getElementById(`btn-role-${r}`);
+    if (!btn) return;
+    if (r === role) {
+      btn.className = 'py-2 rounded-xl border-2 border-wa-teal bg-emerald-50 text-wa-tealDark font-extrabold text-center shadow transition';
+    } else {
+      btn.className = 'py-2 rounded-xl border border-slate-200 bg-white text-slate-700 font-bold text-center hover:border-wa-teal shadow-sm transition';
+    }
+  });
 }
 
 // ================= NAVIGATION TABS =================
@@ -447,6 +555,11 @@ function renderListings(listings) {
           <div class="absolute top-3 left-3 bg-black/60 backdrop-blur-md text-white text-[10px] font-bold px-2.5 py-1 rounded-full uppercase tracking-wider">
             ${item.property_type}
           </div>
+          <button onclick="event.stopPropagation(); toggleFavoriteListing(${item.id})" 
+                  class="absolute top-3 right-3 w-7 h-7 rounded-full bg-black/50 hover:bg-black/70 backdrop-blur-md flex items-center justify-center text-white transition shadow-sm z-10"
+                  title="Shortlist Plot">
+            <i data-lucide="heart" class="w-3.5 h-3.5 ${isFavorite(item.id) ? 'fill-rose-500 text-rose-500' : 'text-white'}"></i>
+          </button>
           <div class="absolute bottom-3 left-3 bg-wa-tealDark/95 backdrop-blur-md text-white px-3 py-1 rounded-xl text-xs font-black shadow-lg">
             ₹${formattedPrice}
           </div>
@@ -687,6 +800,13 @@ function openPropertyDetails(listingId) {
     } else {
       ownerActions.classList.add('hidden');
     }
+  }
+
+  const favIcon = document.getElementById('icon-detail-fav');
+  if (favIcon) {
+    favIcon.className = isFavorite(item.id)
+      ? 'w-4 h-4 fill-rose-500 text-rose-500'
+      : 'w-4 h-4 text-white';
   }
 
   if (modal) modal.classList.remove('hidden');

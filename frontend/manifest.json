@@ -1,0 +1,21 @@
+{
+  "name": "LandConnect",
+  "short_name": "LandConnect",
+  "description": "WhatsApp-inspired Real Estate Land Marketplace with In-App P2P Calling",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#075E54",
+  "theme_color": "#075E54",
+  "icons": [
+    {
+      "src": "https://img.icons8.com/color/192/whatsapp--v1.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "https://img.icons8.com/color/512/whatsapp--v1.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

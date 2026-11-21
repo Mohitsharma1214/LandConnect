@@ -112,6 +112,32 @@ async def api_me(request):
         return JSONResponse({"error": "User not found."}, status_code=404)
     return JSONResponse(serialize_dict(profile))
 
+async def api_switch_role(request):
+    auth_header = request.headers.get("Authorization", "")
+    token = auth_header.replace("Bearer ", "") if "Bearer " in auth_header else auth_header
+    payload = decode_jwt_token(token)
+    if not payload:
+        return JSONResponse({"error": "Unauthorized or invalid token."}, status_code=401)
+    
+    data = await request.json()
+    new_role = data.get("role", "").lower()
+    if new_role not in ["buyer", "seller", "broker"]:
+        return JSONResponse({"error": "Invalid role."}, status_code=400)
+    
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("UPDATE users SET role = %s WHERE id = %s", (new_role, payload["sub"]))
+    conn.commit()
+    cursor.close()
+    conn.close()
+
+    updated_profile = get_user_profile(payload["sub"])
+    new_token = create_jwt_token(payload["sub"], updated_profile["email"], new_role)
+    return JSONResponse({
+        "token": new_token,
+        "user": serialize_dict(updated_profile)
+    })
+
 async def api_users(request):
     """List available users/contacts for chat & calling"""
     conn = get_connection()
@@ -303,15 +329,27 @@ async def api_get_messages(request):
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute("""
-        SELECT m.*, s.name as sender_name, r.name as receiver_name
+        SELECT m.*, 
+               s.name as sender_name, s.avatar as sender_avatar,
+               r.name as receiver_name, r.avatar as receiver_avatar,
+               l.title as listing_title, l.price as listing_price, l.images as listing_images
         FROM messages m
         JOIN users s ON m.sender_id = s.id
         JOIN users r ON m.receiver_id = r.id
+        LEFT JOIN listings l ON m.listing_id = l.id
         WHERE (m.sender_id = %s AND m.receiver_id = %s)
            OR (m.sender_id = %s AND m.receiver_id = %s)
         ORDER BY m.created_at ASC
     """, (my_id, other_user_id, other_user_id, my_id))
-    rows = [serialize_dict(dict(r)) for r in cursor.fetchall()]
+    rows = []
+    for r in cursor.fetchall():
+        d = serialize_dict(dict(r))
+        if d.get("listing_images"):
+            try:
+                d["listing_images"] = json.loads(d["listing_images"]) if isinstance(d["listing_images"], str) else d["listing_images"]
+            except Exception:
+                d["listing_images"] = []
+        rows.append(d)
     cursor.close()
     conn.close()
     return JSONResponse(rows)
@@ -328,6 +366,7 @@ async def api_send_message(request):
     receiver_id = int(data.get("receiver_id"))
     listing_id = data.get("listing_id")
     content = data.get("content", "").strip()
+    message_type = data.get("message_type", "text")
 
     if not receiver_id or not content:
         return JSONResponse({"error": "Receiver and message content are required."}, status_code=400)
@@ -335,20 +374,28 @@ async def api_send_message(request):
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute("""
-        INSERT INTO messages (sender_id, receiver_id, listing_id, content)
-        VALUES (%s, %s, %s, %s)
+        INSERT INTO messages (sender_id, receiver_id, listing_id, content, message_type)
+        VALUES (%s, %s, %s, %s, %s)
         RETURNING id;
-    """, (sender_id, receiver_id, listing_id, content))
+    """, (sender_id, receiver_id, listing_id, content, message_type))
     msg_id = cursor.fetchone()["id"]
     conn.commit()
 
     cursor.execute("""
-        SELECT m.*, s.name as sender_name, s.avatar as sender_avatar
+        SELECT m.*, 
+               s.name as sender_name, s.avatar as sender_avatar,
+               l.title as listing_title, l.price as listing_price, l.images as listing_images
         FROM messages m
         JOIN users s ON m.sender_id = s.id
+        LEFT JOIN listings l ON m.listing_id = l.id
         WHERE m.id = %s
     """, (msg_id,))
     msg_data = serialize_dict(dict(cursor.fetchone()))
+    if msg_data.get("listing_images"):
+        try:
+            msg_data["listing_images"] = json.loads(msg_data["listing_images"]) if isinstance(msg_data["listing_images"], str) else msg_data["listing_images"]
+        except Exception:
+            msg_data["listing_images"] = []
     cursor.close()
     conn.close()
 
@@ -489,6 +536,7 @@ routes = [
     Route("/api/auth/register", api_register, methods=["POST"]),
     Route("/api/auth/login", api_login, methods=["POST"]),
     Route("/api/auth/me", api_me, methods=["GET"]),
+    Route("/api/auth/role", api_switch_role, methods=["PUT"]),
     Route("/api/users", api_users, methods=["GET"]),
     Route("/api/listings", api_get_listings, methods=["GET"]),
     Route("/api/listings", api_create_listing, methods=["POST"]),
