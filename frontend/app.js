@@ -222,6 +222,23 @@ document.addEventListener('DOMContentLoaded', async () => {
   setInterval(updateClock, 10000);
   updateSavedCounterUI();
 
+  // Mobile keyboard & viewport handling: keep typing input visible without outer scrolling
+  const chatInput = document.getElementById('chat-input');
+  if (chatInput) {
+    chatInput.addEventListener('focus', () => {
+      setTimeout(() => {
+        const container = document.getElementById('chat-messages-container');
+        if (container) container.scrollTop = container.scrollHeight;
+      }, 300);
+    });
+  }
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener('resize', () => {
+      const container = document.getElementById('chat-messages-container');
+      if (container) container.scrollTop = container.scrollHeight;
+    });
+  }
+
   if (currentToken) {
     // If cached user exists, apply role UI instantly (zero flash)
     if (currentUser) {
