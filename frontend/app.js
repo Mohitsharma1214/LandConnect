@@ -296,17 +296,31 @@ async function submitRegister(e) {
   }
 }
 
-function handleLogout() {
-  if (confirm('Are you sure you want to sign out of LandConnect?')) {
-    currentToken = null;
-    currentUser = null;
-    localStorage.removeItem('landconnect_token');
-    document.documentElement.classList.remove('user-has-session');
-    if (ws) {
-      try { ws.close(); } catch(e){}
-    }
-    showAuthScreen();
+function openLogoutConfirmModal() {
+  const modal = document.getElementById('logout-confirm-modal');
+  if (modal) modal.classList.remove('hidden');
+  if (window.lucide) lucide.createIcons();
+}
+
+function closeLogoutConfirmModal() {
+  const modal = document.getElementById('logout-confirm-modal');
+  if (modal) modal.classList.add('hidden');
+}
+
+function confirmSignOut() {
+  closeLogoutConfirmModal();
+  currentToken = null;
+  currentUser = null;
+  localStorage.removeItem('landconnect_token');
+  document.documentElement.classList.remove('user-has-session');
+  if (ws) {
+    try { ws.close(); } catch(e){}
   }
+  showAuthScreen();
+}
+
+function handleLogout() {
+  openLogoutConfirmModal();
 }
 
 async function fetchUserProfile() {
