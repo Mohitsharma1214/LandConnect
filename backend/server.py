@@ -114,11 +114,12 @@ def db_save_message(sender_id, receiver_id, listing_id, content, message_type):
     conn = get_connection()
     try:
         cursor = conn.cursor()
+        is_read_val = 1 if sender_id == receiver_id else 0
         cursor.execute("""
-            INSERT INTO messages (sender_id, receiver_id, listing_id, content, message_type)
-            VALUES (%s, %s, %s, %s, %s)
+            INSERT INTO messages (sender_id, receiver_id, listing_id, content, message_type, is_read)
+            VALUES (%s, %s, %s, %s, %s, %s)
             RETURNING id, created_at;
-        """, (sender_id, receiver_id, listing_id, content, message_type))
+        """, (sender_id, receiver_id, listing_id, content, message_type, is_read_val))
         row = cursor.fetchone()
         msg_id = row["id"]
         created_at = row["created_at"]
@@ -580,9 +581,9 @@ async def api_get_messages(request):
                     except Exception:
                         d["listing_images"] = []
                 rows.append(d)
-            if has_unread:
-                cursor.execute("UPDATE messages SET is_read = 1 WHERE sender_id = %s AND receiver_id = %s AND is_read = 0", (other_user_id, my_id))
-                conn.commit()
+            # Always mark unread messages from other_user_id to my_id as read when opening chat
+            cursor.execute("UPDATE messages SET is_read = 1 WHERE sender_id = %s AND receiver_id = %s AND is_read = 0", (other_user_id, my_id))
+            conn.commit()
             cursor.close()
             return rows
         finally:
@@ -620,25 +621,27 @@ async def api_conversations(request):
                     SELECT DISTINCT 
                         CASE WHEN sender_id = %s THEN receiver_id ELSE sender_id END AS other_user_id
                     FROM messages
-                    WHERE sender_id = %s OR receiver_id = %s
+                    WHERE (sender_id = %s OR receiver_id = %s)
+                      AND sender_id != receiver_id
                 ) conv
                 JOIN users u ON u.id = conv.other_user_id
                 LEFT JOIN LATERAL (
                     SELECT content, message_type, created_at, sender_id
                     FROM messages
-                    WHERE (sender_id = %s AND receiver_id = conv.other_user_id)
-                       OR (sender_id = conv.other_user_id AND receiver_id = %s)
+                    WHERE ((sender_id = %s AND receiver_id = conv.other_user_id)
+                       OR (sender_id = conv.other_user_id AND receiver_id = %s))
+                      AND sender_id != receiver_id
                     ORDER BY created_at DESC
                     LIMIT 1
                 ) last_m ON true
                 LEFT JOIN (
                     SELECT sender_id, COUNT(*) AS cnt
                     FROM messages
-                    WHERE receiver_id = %s AND is_read = 0
+                    WHERE receiver_id = %s AND sender_id != %s AND is_read = 0
                     GROUP BY sender_id
                 ) unread ON unread.sender_id = conv.other_user_id
                 ORDER BY last_m.created_at DESC NULLS LAST;
-            """, (my_id, my_id, my_id, my_id, my_id, my_id))
+            """, (my_id, my_id, my_id, my_id, my_id, my_id, my_id))
             rows = [serialize_dict(dict(r)) for r in cursor.fetchall()]
             cursor.close()
             return rows

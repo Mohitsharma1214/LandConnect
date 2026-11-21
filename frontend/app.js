@@ -1540,9 +1540,13 @@ function updateUnreadBadgesCounter() {
   const badge = document.getElementById('chats-badge');
   if (!badge) return;
 
+  const myId = currentUser ? Number(currentUser.id) : 0;
+  const activePeerId = activeChatPeer ? Number(activeChatPeer.id) : 0;
   const archivedIds = getArchivedChatIds();
+
   const totalUnread = recentConversations.reduce((acc, c) => {
-    if (!archivedIds.includes(Number(c.peer_id))) {
+    const peerId = Number(c.peer_id);
+    if (peerId && peerId !== myId && peerId !== activePeerId && !archivedIds.includes(peerId)) {
       return acc + (Number(c.unread_count) || 0);
     }
     return acc;
@@ -4147,6 +4151,8 @@ function initWebSocket() {
             conv.last_message_sender_id = msgSenderId;
             if (!isCurrentChat) {
               conv.unread_count = (Number(conv.unread_count) || 0) + 1;
+            } else {
+              conv.unread_count = 0;
             }
             const idx = recentConversations.indexOf(conv);
             if (idx > -1) recentConversations.splice(idx, 1);
