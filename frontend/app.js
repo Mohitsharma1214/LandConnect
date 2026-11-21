@@ -2591,54 +2591,167 @@ function renderCallsContactsList() {
   if (window.lucide) lucide.createIcons();
 }
 
+let rawCallLogs = [];
+let rawMeetingRoomLogs = [];
+let activeCallHistoryFilter = 'all';
+let meetingRoomSeconds = 0;
+let meetingRoomTimerInterval = null;
+
 async function fetchCallLogs() {
   if (!currentToken) return;
   try {
-    const res = await fetch(`${API_BASE}/api/calls/history`, {
-      headers: { 'Authorization': `Bearer ${currentToken}` }
-    });
-    const logs = await res.json();
-    renderCallLogs(logs);
+    const [resCalls, resRooms] = await Promise.all([
+      fetch(`${API_BASE}/api/calls/history`, {
+        headers: { 'Authorization': `Bearer ${currentToken}` }
+      }),
+      fetch(`${API_BASE}/api/meeting-rooms/history`, {
+        headers: { 'Authorization': `Bearer ${currentToken}` }
+      })
+    ]);
+    rawCallLogs = resCalls.ok ? await resCalls.json() : [];
+    rawMeetingRoomLogs = resRooms.ok ? await resRooms.json() : [];
+    renderCallLogs();
   } catch (err) {
-    console.error('Error fetching call logs:', err);
+    console.error('Error fetching call & meeting history:', err);
   }
 }
 
-function renderCallLogs(logs) {
+function setCallHistoryFilter(filter) {
+  activeCallHistoryFilter = filter;
+  const btnAll = document.getElementById('btn-call-filter-all');
+  const btnRooms = document.getElementById('btn-call-filter-rooms');
+  const btnDirect = document.getElementById('btn-call-filter-direct');
+
+  const activeClass = 'px-2.5 py-1 rounded-lg font-bold text-[11px] bg-wa-teal text-white shadow-xs transition';
+  const inactiveClass = 'px-2.5 py-1 rounded-lg font-semibold text-[11px] bg-slate-100 text-slate-600 hover:bg-slate-200 transition';
+
+  if (btnAll) btnAll.className = filter === 'all' ? activeClass : inactiveClass;
+  if (btnRooms) btnRooms.className = filter === 'rooms' ? activeClass : inactiveClass;
+  if (btnDirect) btnDirect.className = filter === 'direct' ? activeClass : inactiveClass;
+
+  renderCallLogs();
+}
+
+function copyMeetingLinkById(roomId) {
+  const url = `${window.location.origin}/?room=${encodeURIComponent(roomId)}`;
+  navigator.clipboard.writeText(url).then(() => {
+    showToast(`Meeting link for ${roomId} copied to clipboard!`, 'success');
+  }).catch(() => {
+    showToast(`Meeting link copied!`, 'success');
+  });
+}
+
+function renderCallLogs() {
   const container = document.getElementById('call-logs-container');
   if (!container) return;
 
-  if (logs.length === 0) {
-    container.innerHTML = `<div class="p-4 text-center text-slate-400 text-xs">No call logs recorded yet.</div>`;
+  // Update counts on filter tabs
+  const countAllEl = document.getElementById('count-history-all');
+  const countRoomsEl = document.getElementById('count-history-rooms');
+  const countDirectEl = document.getElementById('count-history-direct');
+
+  if (countAllEl) countAllEl.textContent = (rawCallLogs.length + rawMeetingRoomLogs.length);
+  if (countRoomsEl) countRoomsEl.textContent = rawMeetingRoomLogs.length;
+  if (countDirectEl) countDirectEl.textContent = rawCallLogs.length;
+
+  // Tag items with uniform shape
+  const directItems = rawCallLogs.map(l => ({
+    ...l,
+    item_type: 'direct_call',
+    timestamp: new Date(parseDateSafe(l.created_at)).getTime() || 0
+  }));
+
+  const roomItems = rawMeetingRoomLogs.map(r => ({
+    ...r,
+    item_type: 'meeting_room',
+    timestamp: new Date(parseDateSafe(r.updated_at || r.created_at)).getTime() || 0
+  }));
+
+  let combined = [];
+  if (activeCallHistoryFilter === 'all') {
+    combined = [...roomItems, ...directItems].sort((a, b) => b.timestamp - a.timestamp);
+  } else if (activeCallHistoryFilter === 'rooms') {
+    combined = [...roomItems].sort((a, b) => b.timestamp - a.timestamp);
+  } else {
+    combined = [...directItems].sort((a, b) => b.timestamp - a.timestamp);
+  }
+
+  if (combined.length === 0) {
+    container.innerHTML = `<div class="p-6 text-center text-slate-400 text-xs">No call or meeting history found.</div>`;
     return;
   }
 
-  container.innerHTML = logs.map(l => {
+  container.innerHTML = combined.map(item => {
+    if (item.item_type === 'meeting_room') {
+      const roomId = item.room_id || 'land-room';
+      const timeStr = item.created_at ? new Date(parseDateSafe(item.created_at)).toLocaleDateString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Recent';
+      const durSec = item.duration_seconds || 0;
+      const durationStr = durSec > 0 ? `${Math.floor(durSec / 60)}m ${durSec % 60}s` : 'Deal Session';
+      const participantsStr = item.participants_summary || (item.host_name ? `Hosted by ${item.host_name}` : 'Virtual Meeting Room');
+
+      return `
+        <div class="p-3 flex items-center justify-between hover:bg-slate-50/80 transition">
+          <div class="flex items-center gap-3 min-w-0 flex-1">
+            <div class="w-10 h-10 rounded-2xl bg-gradient-to-tr from-wa-tealDark to-emerald-600 text-white flex items-center justify-center shrink-0 shadow-sm border border-emerald-500/30">
+              <i data-lucide="users" class="w-5 h-5"></i>
+            </div>
+            <div class="min-w-0 flex-1">
+              <div class="flex items-center gap-1.5 flex-wrap">
+                <h4 class="font-bold text-xs text-slate-800">Virtual Meeting Room</h4>
+                <span class="text-[9px] font-mono px-1.5 py-0.2 rounded bg-emerald-100 text-emerald-800 font-bold border border-emerald-200 truncate max-w-[140px]">${roomId}</span>
+              </div>
+              <p class="text-[11px] text-slate-500 truncate mt-0.5" title="${participantsStr}">${participantsStr}</p>
+              <div class="flex items-center gap-1.5 text-[10px] text-slate-400 mt-0.5">
+                <span class="text-emerald-600 font-semibold flex items-center gap-0.5">
+                  <i data-lucide="video" class="w-3 h-3"></i> Group Video
+                </span> •
+                <span>${timeStr}</span> •
+                <span>${durationStr}</span>
+              </div>
+            </div>
+          </div>
+          <div class="flex items-center gap-1 shrink-0 ml-2">
+            <button onclick="copyMeetingLinkById('${roomId}')" title="Copy Meeting Link" class="p-2 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition">
+              <i data-lucide="copy" class="w-4 h-4"></i>
+            </button>
+            <button onclick="joinMultiPartyMeetingRoom('${roomId}')" title="Rejoin Video Meeting Room" class="px-2.5 py-1.5 rounded-xl bg-wa-green hover:bg-emerald-500 text-wa-tealDark font-extrabold text-xs flex items-center gap-1 transition shadow-sm">
+              <i data-lucide="video" class="w-3.5 h-3.5 stroke-[2.5]"></i>
+              <span>Rejoin</span>
+            </button>
+          </div>
+        </div>
+      `;
+    }
+
+    // Direct Call Item
+    const l = item;
     const isCaller = currentUser && l.caller_id === currentUser.id;
     const otherName = isCaller ? l.receiver_name : l.caller_name;
     const otherAvatar = isCaller ? l.receiver_avatar : l.caller_avatar;
     const otherRole = isCaller ? l.receiver_role : l.caller_role;
     const otherId = isCaller ? l.receiver_id : l.caller_id;
+    const timeStr = l.created_at ? new Date(parseDateSafe(l.created_at)).toLocaleDateString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Recent';
     const duration = `${Math.floor(l.duration_seconds / 60)}m ${l.duration_seconds % 60}s`;
 
     return `
-      <div class="p-3 flex items-center justify-between">
-        <div class="flex items-center gap-3">
-          <img src="${otherAvatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100'}" class="w-9 h-9 rounded-full object-cover">
-          <div>
+      <div class="p-3 flex items-center justify-between hover:bg-slate-50/80 transition">
+        <div class="flex items-center gap-3 min-w-0 flex-1">
+          <img src="${otherAvatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100'}" class="w-10 h-10 rounded-full object-cover shrink-0 border border-slate-200">
+          <div class="min-w-0 flex-1">
             <div class="flex items-center gap-1.5">
-              <h4 class="font-bold text-xs text-slate-800">${otherName}</h4>
-              <span class="text-[9px] uppercase px-1 rounded bg-slate-100 text-slate-600 font-semibold">${otherRole}</span>
+              <h4 class="font-bold text-xs text-slate-800 truncate">${otherName}</h4>
+              <span class="text-[9px] uppercase px-1 rounded bg-slate-100 text-slate-600 font-semibold shrink-0">${otherRole}</span>
             </div>
             <div class="flex items-center gap-1 text-[10px] text-slate-500 mt-0.5">
               <i data-lucide="${isCaller ? 'phone-outgoing' : 'phone-incoming'}" class="w-3 h-3 ${isCaller ? 'text-emerald-500' : 'text-blue-500'}"></i>
               <span>${l.call_type === 'video' ? 'Video' : 'Audio'} Call</span> •
+              <span>${timeStr}</span> •
               <span>${duration}</span>
             </div>
           </div>
         </div>
         <button onclick="initiateDirectCall(${otherId}, '${escapeQuotes(otherName)}', '${escapeQuotes(otherAvatar)}', '${otherRole}', '${l.call_type}')"
-                class="text-wa-teal p-2 hover:bg-slate-100 rounded-full">
+                class="text-wa-teal p-2 hover:bg-slate-100 rounded-full shrink-0" title="Call Back">
           <i data-lucide="${l.call_type === 'video' ? 'video' : 'phone'}" class="w-4 h-4"></i>
         </button>
       </div>
@@ -3521,15 +3634,28 @@ async function joinMultiPartyMeetingRoom(roomId) {
     }));
   }
 
+  // Session duration timer
+  meetingRoomSeconds = 0;
+  clearInterval(meetingRoomTimerInterval);
+  meetingRoomTimerInterval = setInterval(() => {
+    meetingRoomSeconds++;
+  }, 1000);
+
   showToast(`Joined Virtual Meeting Room: ${roomId}`, 'success');
   if (window.lucide) lucide.createIcons();
+  fetchCallLogs();
 }
 
 function leaveMeetingRoom() {
+  const dur = meetingRoomSeconds || 0;
+  clearInterval(meetingRoomTimerInterval);
+  meetingRoomSeconds = 0;
+
   if (currentMeetingRoomId && ws && ws.readyState === WebSocket.OPEN) {
     ws.send(JSON.stringify({
       type: 'leave_meeting_room',
-      roomId: currentMeetingRoomId
+      roomId: currentMeetingRoomId,
+      duration: dur
     }));
   }
 
@@ -3565,6 +3691,7 @@ function leaveMeetingRoom() {
 
   currentMeetingRoomId = null;
   showToast('You left the meeting room.', 'info');
+  fetchCallLogs();
 }
 
 function createMeetingPeerConnection(peerId) {

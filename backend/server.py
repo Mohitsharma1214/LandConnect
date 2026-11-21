@@ -733,6 +733,39 @@ async def api_call_logs(request):
     logs = await asyncio.to_thread(fetch_logs)
     return JSONResponse(logs)
 
+async def api_meeting_room_history(request):
+    auth_header = request.headers.get("Authorization", "")
+    token = auth_header.replace("Bearer ", "") if "Bearer " in auth_header else auth_header
+    payload = decode_jwt_token(token)
+    if not payload:
+        return JSONResponse({"error": "Unauthorized."}, status_code=401)
+    
+    user_id = payload["sub"]
+
+    def fetch_room_logs():
+        conn = get_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT m.*, 
+                       u_host.name as host_name, u_host.avatar as host_avatar, u_host.role as host_role
+                FROM meeting_room_logs m
+                JOIN users u_host ON m.host_id = u_host.id
+                WHERE m.host_id = %s OR m.room_id IN (
+                    SELECT room_id FROM meeting_room_participants WHERE user_id = %s
+                )
+                ORDER BY m.updated_at DESC
+                LIMIT 50;
+            """, (user_id, user_id))
+            logs = [serialize_dict(dict(r)) for r in cursor.fetchall()]
+            cursor.close()
+            return logs
+        finally:
+            conn.close()
+
+    logs = await asyncio.to_thread(fetch_room_logs)
+    return JSONResponse(logs)
+
 # --- Real-Time WebSocket for Signaling (Audio / Video Calls, Meeting Rooms & Live Chat) ---
 
 # Active multi-participant meeting rooms:
@@ -926,10 +959,49 @@ async def websocket_signaling(websocket: WebSocket):
                         "peer": user_entry
                     })
 
+                # 3. Async persist meeting room and participant
+                if DATABASE_URL:
+                    def log_room_join_sync(r_id, h_id, u_info):
+                        try:
+                            c_conn = get_connection()
+                            c_cur = c_conn.cursor()
+                            c_cur.execute("""
+                                INSERT INTO meeting_room_logs (room_id, host_id, title, created_at, updated_at)
+                                VALUES (%s, %s, %s, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                                ON CONFLICT (room_id) DO UPDATE SET updated_at = CURRENT_TIMESTAMP;
+                            """, (r_id, h_id, "Virtual Meeting Room"))
+
+                            c_cur.execute("""
+                                INSERT INTO meeting_room_participants (room_id, user_id, user_name, user_avatar, user_role, joined_at)
+                                VALUES (%s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
+                                ON CONFLICT (room_id, user_id) DO UPDATE SET joined_at = CURRENT_TIMESTAMP;
+                            """, (r_id, h_id, u_info.get("name", "User"), u_info.get("avatar", ""), u_info.get("role", "Member")))
+
+                            c_cur.execute("""
+                                SELECT user_name, user_role FROM meeting_room_participants WHERE room_id = %s ORDER BY joined_at ASC;
+                            """, (r_id,))
+                            all_parts = c_cur.fetchall()
+                            summary_str = ", ".join([f"{p['user_name']} ({p['user_role'].title()})" for p in all_parts])
+
+                            c_cur.execute("""
+                                UPDATE meeting_room_logs 
+                                SET participants_summary = %s, updated_at = CURRENT_TIMESTAMP 
+                                WHERE room_id = %s;
+                            """, (summary_str, r_id))
+
+                            c_conn.commit()
+                            c_cur.close()
+                            c_conn.close()
+                        except Exception as e:
+                            print("Error logging meeting room join:", e)
+
+                    asyncio.create_task(asyncio.to_thread(log_room_join_sync, room_id, authenticated_user_id, user_entry))
+
             elif msg_type == "leave_meeting_room":
                 if not authenticated_user_id:
                     continue
                 room_id = data.get("roomId", "").strip()
+                duration = int(data.get("duration", 0))
                 if room_id in active_meeting_rooms:
                     room = active_meeting_rooms[room_id]
                     if authenticated_user_id in room["participants"]:
@@ -942,6 +1014,23 @@ async def websocket_signaling(websocket: WebSocket):
                             })
                         if not room["participants"]:
                             del active_meeting_rooms[room_id]
+
+                if duration > 0 and DATABASE_URL:
+                    def update_room_duration_sync(r_id, dur):
+                        try:
+                            c_conn = get_connection()
+                            c_cur = c_conn.cursor()
+                            c_cur.execute("""
+                                UPDATE meeting_room_logs 
+                                SET duration_seconds = GREATEST(duration_seconds, %s), updated_at = CURRENT_TIMESTAMP
+                                WHERE room_id = %s;
+                            """, (dur, r_id))
+                            c_conn.commit()
+                            c_cur.close()
+                            c_conn.close()
+                        except Exception as e:
+                            print("Error updating room duration:", e)
+                    asyncio.create_task(asyncio.to_thread(update_room_duration_sync, room_id, duration))
 
             elif msg_type in ("meeting_offer", "meeting_answer", "meeting_ice_candidate"):
                 target_id = data.get("targetUserId")
@@ -994,6 +1083,7 @@ routes = [
     Route("/api/messages", api_send_message, methods=["POST"]),
     Route("/api/conversations", api_conversations, methods=["GET"]),
     Route("/api/calls/history", api_call_logs, methods=["GET"]),
+    Route("/api/meeting-rooms/history", api_meeting_room_history, methods=["GET"]),
     WebSocketRoute("/ws", websocket_signaling),
     Route("/", serve_index),
 ]

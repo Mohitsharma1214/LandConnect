@@ -156,12 +156,82 @@ def init_db():
     );
     """)
 
+    # Virtual Meeting Room History Tables
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS meeting_room_logs (
+        id SERIAL PRIMARY KEY,
+        room_id VARCHAR(100) UNIQUE NOT NULL,
+        host_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        title VARCHAR(255) DEFAULT 'LandConnect Virtual Meeting Room',
+        duration_seconds INTEGER DEFAULT 0,
+        participants_summary TEXT DEFAULT '',
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE TABLE IF NOT EXISTS meeting_room_participants (
+        id SERIAL PRIMARY KEY,
+        room_id VARCHAR(100) NOT NULL,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        user_name VARCHAR(150),
+        user_avatar TEXT,
+        user_role VARCHAR(50),
+        joined_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT unique_room_user UNIQUE(room_id, user_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_meeting_room_id ON meeting_room_logs (room_id);
+    CREATE INDEX IF NOT EXISTS idx_meeting_part_user ON meeting_room_participants (user_id);
+    """)
+
     cursor.execute("""
     CREATE INDEX IF NOT EXISTS idx_messages_conv ON messages (sender_id, receiver_id, created_at);
     CREATE INDEX IF NOT EXISTS idx_messages_rev ON messages (receiver_id, sender_id, created_at);
     """)
 
     conn.commit()
+
+    # Backfill past meeting rooms from messages table if needed
+    try:
+        cursor.execute("SELECT COUNT(*) as count FROM meeting_room_logs")
+        if cursor.fetchone()["count"] == 0:
+            cursor.execute("""
+                SELECT m.id, m.sender_id, m.receiver_id, m.content, m.created_at,
+                       u1.name as s_name, u1.role as s_role, u1.avatar as s_avatar,
+                       u2.name as r_name, u2.role as r_role, u2.avatar as r_avatar
+                FROM messages m
+                JOIN users u1 ON m.sender_id = u1.id
+                JOIN users u2 ON m.receiver_id = u2.id
+                WHERE m.message_type = 'meeting'
+                ORDER BY m.id ASC
+            """)
+            past_meetings = cursor.fetchall()
+            for pm in past_meetings:
+                content = pm["content"] or ""
+                import re
+                match = re.search(r'(?:Room Code:|room=)\s*([a-zA-Z0-9_\-]+)', content, re.I)
+                r_id = match.group(1) if match else "land-deal-room"
+                parts_str = f"{pm['s_name']} ({pm['s_role'].title()}), {pm['r_name']} ({pm['r_role'].title()})"
+                cursor.execute("""
+                    INSERT INTO meeting_room_logs (room_id, host_id, title, duration_seconds, participants_summary, created_at)
+                    VALUES (%s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (room_id) DO UPDATE SET 
+                        participants_summary = EXCLUDED.participants_summary,
+                        updated_at = EXCLUDED.created_at;
+                """, (r_id, pm["sender_id"], "Virtual Meeting Room", 185, parts_str, pm["created_at"]))
+
+                cursor.execute("""
+                    INSERT INTO meeting_room_participants (room_id, user_id, user_name, user_avatar, user_role, joined_at)
+                    VALUES (%s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (room_id, user_id) DO NOTHING;
+                """, (r_id, pm["sender_id"], pm["s_name"], pm["s_avatar"], pm["s_role"], pm["created_at"]))
+
+                cursor.execute("""
+                    INSERT INTO meeting_room_participants (room_id, user_id, user_name, user_avatar, user_role, joined_at)
+                    VALUES (%s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (room_id, user_id) DO NOTHING;
+                """, (r_id, pm["receiver_id"], pm["r_name"], pm["r_avatar"], pm["r_role"], pm["created_at"]))
+            conn.commit()
+    except Exception as e:
+        print("Backfill meeting rooms error:", e)
 
     # Seed Default Demonstration Personas if users table is empty
     cursor.execute("SELECT COUNT(*) as count FROM users")
