@@ -114,12 +114,19 @@
     <!-- ========================================================================= -->
     <div id="auth-screen" class="flex-1 flex flex-col bg-slate-50 overflow-y-auto z-20">
       <!-- Auth Screen Header with WhatsApp Teal styling -->
-      <div class="bg-wa-teal text-white px-6 pt-6 pb-8 text-center rounded-b-3xl shadow-md">
-        <div class="w-14 h-14 bg-white/20 backdrop-blur-md rounded-2xl flex items-center justify-center mx-auto mb-3 border border-white/30 shadow-inner">
-          <i data-lucide="map-pin" class="w-7 h-7 text-emerald-300"></i>
+      <div class="bg-gradient-to-b from-[#054c43] to-wa-teal text-white px-6 pt-7 pb-9 text-center rounded-b-3xl shadow-md relative overflow-hidden">
+        <div class="w-14 h-14 rounded-2xl bg-gradient-to-tr from-emerald-500 via-emerald-300 to-teal-200 p-[2px] shadow-lg mx-auto mb-3">
+          <div class="w-full h-full bg-gradient-to-br from-wa-tealDark to-[#032e28] rounded-[14px] flex items-center justify-center">
+            <svg class="w-7 h-7 text-emerald-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z"/>
+              <circle cx="12" cy="9" r="2.2" fill="currentColor"/>
+            </svg>
+          </div>
         </div>
-        <h1 class="text-2xl font-black tracking-wide">LandConnect</h1>
-        <p class="text-xs text-emerald-100 mt-1">Real Estate Land Marketplace & P2P Calling</p>
+        <h1 class="text-2xl font-black tracking-tight">
+          <span class="text-white">Land</span><span class="bg-gradient-to-r from-emerald-300 to-teal-200 bg-clip-text text-transparent">Connect</span>
+        </h1>
+        <p class="text-xs text-emerald-100/90 mt-1 font-medium">Verified Land Marketplace & Deal Rooms</p>
       </div>
 
       <!-- Auth Card Container -->
@@ -247,16 +254,32 @@
 
       <!-- WhatsApp Style Top Header -->
       <header class="bg-wa-teal text-white px-4 py-2.5 flex items-center justify-between shadow-md z-20">
-        <div class="flex items-center gap-2">
-          <div class="w-8 h-8 rounded-full bg-emerald-500/30 flex items-center justify-center border border-emerald-300/40">
-            <i data-lucide="map-pin" class="w-4 h-4 text-emerald-300"></i>
+        <div class="flex items-center gap-2.5 group cursor-default select-none">
+          <!-- Premium Geometric Emblem with Depth & Glow -->
+          <div class="w-9 h-9 rounded-xl bg-gradient-to-tr from-emerald-600 via-emerald-400 to-teal-300 p-[1.5px] shadow-sm flex-shrink-0 transition-transform transform group-hover:scale-105">
+            <div class="w-full h-full bg-gradient-to-br from-wa-tealDark via-[#064e43] to-[#043b33] rounded-[10.5px] flex items-center justify-center relative overflow-hidden">
+              <div class="absolute inset-0 bg-emerald-400/10 pointer-events-none"></div>
+              <svg class="w-4.5 h-4.5 text-emerald-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z"/>
+                <circle cx="12" cy="9" r="2.2" fill="currentColor"/>
+              </svg>
+            </div>
           </div>
+
+          <!-- Crisp Typographic Lockup -->
           <div>
-            <h1 class="font-bold text-lg leading-tight tracking-wide">LandConnect</h1>
-            <p class="text-[10px] text-emerald-200 flex items-center gap-1 font-medium">
-              <span class="inline-block w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-              Real Estate & Video Calls
-            </p>
+            <div class="flex items-center gap-1.5 leading-none">
+              <h1 class="font-extrabold text-[17px] tracking-tight">
+                <span class="text-white">Land</span><span class="bg-gradient-to-r from-emerald-300 to-teal-200 bg-clip-text text-transparent font-black">Connect</span>
+              </h1>
+            </div>
+            <div class="flex items-center gap-1.5 text-[10px] text-emerald-100/90 font-medium mt-1">
+              <span class="relative flex h-1.5 w-1.5 shrink-0">
+                <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                <span class="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-400"></span>
+              </span>
+              <span class="tracking-tight">Verified Land & Deal Rooms</span>
+            </div>
           </div>
         </div>
 
