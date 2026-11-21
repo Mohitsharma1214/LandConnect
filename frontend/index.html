@@ -61,7 +61,20 @@
       background-image: radial-gradient(#d1d7db 1px, transparent 1px);
       background-size: 16px 16px;
     }
+    /* Instant zero-flicker session handling on page refresh */
+    html.user-has-session #auth-screen {
+      display: none !important;
+    }
+    html.user-has-session #main-app-screen {
+      display: flex !important;
+    }
   </style>
+  <script>
+    // Immediate pre-render session check to prevent login page flash on refresh
+    if (localStorage.getItem('landconnect_token')) {
+      document.documentElement.classList.add('user-has-session');
+    }
+  </script>
 </head>
 <body class="flex items-center justify-center min-h-screen p-2 md:p-4 text-slate-800 antialiased">
 

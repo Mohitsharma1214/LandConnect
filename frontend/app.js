@@ -38,19 +38,31 @@ document.addEventListener('DOMContentLoaded', async () => {
   setInterval(updateClock, 10000);
 
   if (currentToken) {
-    const success = await fetchUserProfile();
-    if (success) {
-      showMainApp();
-      await loadListings();
-      await loadUsersList();
-      initWebSocket();
-    } else {
-      showAuthScreen();
+    // Optimistically show main app immediately (zero flicker)
+    showMainApp();
+    loadListings();
+    loadUsersList();
+    initWebSocket();
+
+    const valid = await fetchUserProfile();
+    if (!valid) {
+      handleLogoutSilent();
     }
   } else {
     showAuthScreen();
   }
 });
+
+function handleLogoutSilent() {
+  currentToken = null;
+  currentUser = null;
+  localStorage.removeItem('landconnect_token');
+  document.documentElement.classList.remove('user-has-session');
+  if (ws) {
+    try { ws.close(); } catch(e){}
+  }
+  showAuthScreen();
+}
 
 function updateClock() {
   const now = new Date();
@@ -62,6 +74,7 @@ function updateClock() {
 // ================= VIEW TOGGLING (AUTH SCREEN vs MAIN APP) =================
 
 function showAuthScreen() {
+  document.documentElement.classList.remove('user-has-session');
   const authScreen = document.getElementById('auth-screen');
   const mainAppScreen = document.getElementById('main-app-screen');
   if (authScreen) authScreen.classList.remove('hidden');
@@ -71,12 +84,13 @@ function showAuthScreen() {
 }
 
 function showMainApp() {
+  document.documentElement.classList.add('user-has-session');
   const authScreen = document.getElementById('auth-screen');
   const mainAppScreen = document.getElementById('main-app-screen');
   if (authScreen) authScreen.classList.add('hidden');
   if (mainAppScreen) mainAppScreen.classList.remove('hidden');
   applyUserRoleUI();
-  switchTab('feed');
+  switchTab(activeTab || 'feed');
   if (window.lucide) lucide.createIcons();
 }
 
@@ -219,6 +233,7 @@ function handleLogout() {
     currentToken = null;
     currentUser = null;
     localStorage.removeItem('landconnect_token');
+    document.documentElement.classList.remove('user-has-session');
     if (ws) {
       try { ws.close(); } catch(e){}
     }
