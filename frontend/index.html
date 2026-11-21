@@ -61,6 +61,16 @@
       background-image: radial-gradient(#d1d7db 1px, transparent 1px);
       background-size: 16px 16px;
     }
+    /* WhatsApp Style Shimmer Skeleton Effect */
+    @keyframes shimmer-sweep {
+      0% { background-position: -200% 0; }
+      100% { background-position: 200% 0; }
+    }
+    .skeleton-shimmer {
+      background: linear-gradient(90deg, #e2e8f0 25%, #f8fafc 50%, #e2e8f0 75%);
+      background-size: 200% 100%;
+      animation: shimmer-sweep 1.6s infinite ease-in-out;
+    }
     /* Instant zero-flicker session handling on page refresh */
     html.user-has-session #auth-screen {
       display: none !important;
@@ -310,9 +320,67 @@
             </button>
           </div>
 
-          <!-- Listings Cards List -->
+          <!-- Listings Cards List with WhatsApp Style Skeleton Shimmer -->
           <div id="listings-container" class="space-y-3">
-            <div class="text-center py-10 text-slate-400 text-xs">Loading verified land listings...</div>
+            <!-- Skeleton Card 1 -->
+            <div class="bg-white rounded-2xl overflow-hidden shadow-sm border border-slate-200/80 p-0">
+              <div class="h-44 w-full skeleton-shimmer relative">
+                <div class="absolute top-3 left-3 w-20 h-4 bg-slate-300/60 rounded-full"></div>
+                <div class="absolute bottom-3 left-3 w-24 h-6 bg-slate-300/60 rounded-xl"></div>
+              </div>
+              <div class="p-3.5 space-y-2.5">
+                <div class="h-4 w-4/5 skeleton-shimmer rounded-md"></div>
+                <div class="h-3 w-1/2 skeleton-shimmer rounded-md"></div>
+                <div class="space-y-1.5 pt-1">
+                  <div class="h-2.5 w-full skeleton-shimmer rounded-md"></div>
+                  <div class="h-2.5 w-3/4 skeleton-shimmer rounded-md"></div>
+                </div>
+                <div class="pt-2 border-t border-slate-100 flex items-center justify-between">
+                  <div class="flex items-center gap-2">
+                    <div class="w-7 h-7 rounded-full skeleton-shimmer"></div>
+                    <div class="space-y-1">
+                      <div class="h-3 w-16 skeleton-shimmer rounded-md"></div>
+                      <div class="h-2 w-24 skeleton-shimmer rounded-md"></div>
+                    </div>
+                  </div>
+                  <div class="flex gap-1.5">
+                    <div class="w-8 h-8 rounded-xl skeleton-shimmer"></div>
+                    <div class="w-8 h-8 rounded-xl skeleton-shimmer"></div>
+                    <div class="w-8 h-8 rounded-xl skeleton-shimmer"></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Skeleton Card 2 -->
+            <div class="bg-white rounded-2xl overflow-hidden shadow-sm border border-slate-200/80 p-0">
+              <div class="h-44 w-full skeleton-shimmer relative">
+                <div class="absolute top-3 left-3 w-16 h-4 bg-slate-300/60 rounded-full"></div>
+                <div class="absolute bottom-3 left-3 w-28 h-6 bg-slate-300/60 rounded-xl"></div>
+              </div>
+              <div class="p-3.5 space-y-2.5">
+                <div class="h-4 w-3/4 skeleton-shimmer rounded-md"></div>
+                <div class="h-3 w-2/5 skeleton-shimmer rounded-md"></div>
+                <div class="space-y-1.5 pt-1">
+                  <div class="h-2.5 w-full skeleton-shimmer rounded-md"></div>
+                  <div class="h-2.5 w-4/5 skeleton-shimmer rounded-md"></div>
+                </div>
+                <div class="pt-2 border-t border-slate-100 flex items-center justify-between">
+                  <div class="flex items-center gap-2">
+                    <div class="w-7 h-7 rounded-full skeleton-shimmer"></div>
+                    <div class="space-y-1">
+                      <div class="h-3 w-20 skeleton-shimmer rounded-md"></div>
+                      <div class="h-2 w-24 skeleton-shimmer rounded-md"></div>
+                    </div>
+                  </div>
+                  <div class="flex gap-1.5">
+                    <div class="w-8 h-8 rounded-xl skeleton-shimmer"></div>
+                    <div class="w-8 h-8 rounded-xl skeleton-shimmer"></div>
+                    <div class="w-8 h-8 rounded-xl skeleton-shimmer"></div>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         </section>
 
@@ -325,7 +393,39 @@
                 <input type="text" placeholder="Search or start new chat" class="bg-transparent outline-none w-full text-xs">
               </div>
             </div>
-            <div id="contacts-list" class="divide-y divide-slate-100 bg-white"></div>
+            <div id="contacts-list" class="divide-y divide-slate-100 bg-white">
+              <!-- Initial Skeleton Chat Rows -->
+              <div class="p-3 flex items-center justify-between">
+                <div class="flex items-center gap-3">
+                  <div class="w-11 h-11 rounded-full skeleton-shimmer flex-shrink-0"></div>
+                  <div class="space-y-1.5">
+                    <div class="h-3.5 w-28 skeleton-shimmer rounded-md"></div>
+                    <div class="h-2.5 w-44 skeleton-shimmer rounded-md"></div>
+                  </div>
+                </div>
+                <div class="h-2.5 w-10 skeleton-shimmer rounded-md"></div>
+              </div>
+              <div class="p-3 flex items-center justify-between">
+                <div class="flex items-center gap-3">
+                  <div class="w-11 h-11 rounded-full skeleton-shimmer flex-shrink-0"></div>
+                  <div class="space-y-1.5">
+                    <div class="h-3.5 w-24 skeleton-shimmer rounded-md"></div>
+                    <div class="h-2.5 w-36 skeleton-shimmer rounded-md"></div>
+                  </div>
+                </div>
+                <div class="h-2.5 w-8 skeleton-shimmer rounded-md"></div>
+              </div>
+              <div class="p-3 flex items-center justify-between">
+                <div class="flex items-center gap-3">
+                  <div class="w-11 h-11 rounded-full skeleton-shimmer flex-shrink-0"></div>
+                  <div class="space-y-1.5">
+                    <div class="h-3.5 w-32 skeleton-shimmer rounded-md"></div>
+                    <div class="h-2.5 w-40 skeleton-shimmer rounded-md"></div>
+                  </div>
+                </div>
+                <div class="h-2.5 w-12 skeleton-shimmer rounded-md"></div>
+              </div>
+            </div>
           </div>
 
           <!-- Active Chat View -->

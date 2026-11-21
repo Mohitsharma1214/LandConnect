@@ -357,11 +357,67 @@ function switchTab(tabId) {
 
 // ================= LAND LISTINGS & COMMUNITY FEED =================
 
+function renderListingsSkeleton() {
+  const container = document.getElementById('listings-container');
+  if (!container) return;
+  container.innerHTML = [1, 2, 3].map(() => `
+    <div class="bg-white rounded-2xl overflow-hidden shadow-sm border border-slate-200/80 p-0">
+      <div class="h-44 w-full skeleton-shimmer relative">
+        <div class="absolute top-3 left-3 w-20 h-4 bg-slate-300/60 rounded-full"></div>
+        <div class="absolute bottom-3 left-3 w-24 h-6 bg-slate-300/60 rounded-xl"></div>
+      </div>
+      <div class="p-3.5 space-y-2.5">
+        <div class="h-4 w-4/5 skeleton-shimmer rounded-md"></div>
+        <div class="h-3 w-1/2 skeleton-shimmer rounded-md"></div>
+        <div class="space-y-1.5 pt-1">
+          <div class="h-2.5 w-full skeleton-shimmer rounded-md"></div>
+          <div class="h-2.5 w-3/4 skeleton-shimmer rounded-md"></div>
+        </div>
+        <div class="pt-2 border-t border-slate-100 flex items-center justify-between">
+          <div class="flex items-center gap-2">
+            <div class="w-7 h-7 rounded-full skeleton-shimmer"></div>
+            <div class="space-y-1">
+              <div class="h-3 w-16 skeleton-shimmer rounded-md"></div>
+              <div class="h-2 w-24 skeleton-shimmer rounded-md"></div>
+            </div>
+          </div>
+          <div class="flex gap-1.5">
+            <div class="w-8 h-8 rounded-xl skeleton-shimmer"></div>
+            <div class="w-8 h-8 rounded-xl skeleton-shimmer"></div>
+            <div class="w-8 h-8 rounded-xl skeleton-shimmer"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  `).join('');
+}
+
+function renderContactsSkeleton() {
+  const container = document.getElementById('contacts-list');
+  if (!container) return;
+  container.innerHTML = [1, 2, 3, 4].map(() => `
+    <div class="p-3 flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <div class="w-11 h-11 rounded-full skeleton-shimmer flex-shrink-0"></div>
+        <div class="space-y-1.5">
+          <div class="h-3.5 w-28 skeleton-shimmer rounded-md"></div>
+          <div class="h-2.5 w-40 skeleton-shimmer rounded-md"></div>
+        </div>
+      </div>
+      <div class="h-2.5 w-10 skeleton-shimmer rounded-md"></div>
+    </div>
+  `).join('');
+}
+
 async function loadListings() {
+  if (allListings.length === 0) {
+    renderListingsSkeleton();
+  }
   try {
     const res = await fetch(`${API_BASE}/api/listings`);
     allListings = await res.json();
     renderListings(allListings);
+    renderMapParcelsSelector();
   } catch (err) {
     console.error('Error loading listings:', err);
   }
@@ -787,6 +843,9 @@ async function loadMyListings() {
 // ================= WHATSAPP STYLE MESSAGING & CHATS =================
 
 async function loadUsersList() {
+  if (allUsers.length === 0) {
+    renderContactsSkeleton();
+  }
   try {
     const res = await fetch(`${API_BASE}/api/users`);
     allUsers = await res.json();
