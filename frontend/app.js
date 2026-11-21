@@ -389,47 +389,7 @@ function applyUserRoleUI() {
     if (myPropertiesSection) myPropertiesSection.classList.add('hidden');
   }
 
-  highlightActiveRoleButton(currentUser.role);
   if (window.lucide) lucide.createIcons();
-}
-
-async function switchUserRole(newRole) {
-  if (!currentToken) return;
-  try {
-    const res = await fetch(`${API_BASE}/api/auth/role`, {
-      method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${currentToken}`
-      },
-      body: JSON.stringify({ role: newRole })
-    });
-    const data = await res.json();
-    if (data.token) {
-      currentToken = data.token;
-      localStorage.setItem('landconnect_token', currentToken);
-      currentUser = data.user;
-      applyUserRoleUI();
-      await loadListings();
-      alert(`Role successfully switched to: ${newRole.toUpperCase()}`);
-    } else {
-      alert(data.error || 'Failed to switch role');
-    }
-  } catch (err) {
-    console.error('Error switching role:', err);
-  }
-}
-
-function highlightActiveRoleButton(role) {
-  ['buyer', 'seller', 'broker'].forEach(r => {
-    const btn = document.getElementById(`btn-role-${r}`);
-    if (!btn) return;
-    if (r === role) {
-      btn.className = 'py-2 rounded-xl border-2 border-wa-teal bg-emerald-50 text-wa-tealDark font-extrabold text-center shadow transition';
-    } else {
-      btn.className = 'py-2 rounded-xl border border-slate-200 bg-white text-slate-700 font-bold text-center hover:border-wa-teal shadow-sm transition';
-    }
-  });
 }
 
 // ================= NAVIGATION TABS =================
