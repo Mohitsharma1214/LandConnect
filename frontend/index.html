@@ -1453,6 +1453,29 @@
       </div>
     </div>
 
+    <!-- ================= IN-APP DELETE LISTING CONFIRMATION MODAL ================= -->
+    <div id="delete-confirm-modal" class="hidden absolute inset-0 bg-slate-950/75 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+      <div class="bg-white w-full max-w-xs rounded-3xl p-5 shadow-2xl border border-slate-200 text-center space-y-3.5 transform transition-all">
+        <div class="w-12 h-12 rounded-full bg-rose-100 text-rose-600 mx-auto flex items-center justify-center">
+          <i data-lucide="trash-2" class="w-6 h-6"></i>
+        </div>
+        <div>
+          <h3 class="font-bold text-sm text-slate-900">Delete Land Listing?</h3>
+          <p class="text-[11px] text-slate-500 mt-1 leading-relaxed">
+            Are you sure you want to permanently delete this land listing? This action cannot be undone.
+          </p>
+        </div>
+        <div class="grid grid-cols-2 gap-2 pt-1">
+          <button onclick="closeDeleteConfirmModal()" class="w-full bg-slate-100 hover:bg-slate-200 text-slate-700 py-2.5 rounded-xl font-bold text-xs transition">
+            Cancel
+          </button>
+          <button onclick="executeConfirmedDeleteListing()" class="w-full bg-rose-600 hover:bg-rose-700 text-white py-2.5 rounded-xl font-bold text-xs transition shadow-md">
+            Delete
+          </button>
+        </div>
+      </div>
+    </div>
+
     <!-- ================= FLOATING IN-APP TOAST NOTIFICATION ================= -->
     <div id="in-app-toast" class="hidden absolute top-12 left-3 right-3 z-[9999] transition-all transform duration-300 ease-out pointer-events-none">
       <div id="in-app-toast-box" class="mx-auto max-w-xs bg-slate-900/95 backdrop-blur-md text-white px-3.5 py-2.5 rounded-2xl shadow-2xl flex items-center gap-2.5 text-xs border border-white/10 pointer-events-auto">

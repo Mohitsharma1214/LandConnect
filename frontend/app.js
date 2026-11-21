@@ -3,6 +3,15 @@
 const API_BASE = window.location.origin;
 let WS_URL = `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/ws`;
 
+// Global safety interceptors: completely eliminate native browser popups
+window.alert = function(msg) {
+  if (typeof showToast === 'function') {
+    showToast(String(msg), 'info');
+  } else {
+    console.log('[Native Alert Suppressed]:', msg);
+  }
+};
+
 // --- State Variables ---
 let currentToken = localStorage.getItem('landconnect_token') || null;
 let currentUser = null;
@@ -1051,8 +1060,33 @@ async function handleUpdateListing(e) {
   }
 }
 
-async function handleDeleteListing(listingId) {
-  if (!confirm('Are you sure you want to permanently delete this land listing?')) return;
+let pendingDeleteListingId = null;
+
+function promptDeleteListing(listingId) {
+  pendingDeleteListingId = listingId;
+  const modal = document.getElementById('delete-confirm-modal');
+  if (modal) modal.classList.remove('hidden');
+  if (window.lucide) lucide.createIcons();
+}
+
+function closeDeleteConfirmModal() {
+  pendingDeleteListingId = null;
+  const modal = document.getElementById('delete-confirm-modal');
+  if (modal) modal.classList.add('hidden');
+}
+
+async function executeConfirmedDeleteListing() {
+  if (!pendingDeleteListingId) return;
+  const idToDelete = pendingDeleteListingId;
+  closeDeleteConfirmModal();
+  await performDeleteListing(idToDelete);
+}
+
+function handleDeleteListing(listingId) {
+  promptDeleteListing(listingId);
+}
+
+async function performDeleteListing(listingId) {
   if (!currentToken) return;
 
   try {
