@@ -704,13 +704,13 @@
             <button onclick="toggleArchiveCurrentChat()" id="btn-chat-archive-header" title="Archive / Unarchive Conversation" class="p-1.5 rounded-full hover:bg-white/10 text-emerald-100 hover:text-white transition">
               <i data-lucide="archive" class="w-4 h-4"></i>
             </button>
-            <button onclick="createMeetingRoom()" title="Start Virtual Meeting Room" class="p-1.5 rounded-full hover:bg-white/10 text-emerald-100 hover:text-white transition">
+            <button onclick="createMeetingRoom()" id="btn-chat-meet-header" title="Start Virtual Meeting Room" class="p-1.5 rounded-full hover:bg-white/10 text-emerald-100 hover:text-white transition">
               <i data-lucide="users" class="w-4 h-4"></i>
             </button>
-            <button onclick="triggerCallFromChat('video')" title="Start Video Call" class="p-1.5 rounded-full hover:bg-white/10 text-emerald-100 hover:text-white transition">
+            <button onclick="triggerCallFromChat('video')" id="btn-chat-video-header" title="Start Video Call" class="p-1.5 rounded-full hover:bg-white/10 text-emerald-100 hover:text-white transition">
               <i data-lucide="video" class="w-4 h-4"></i>
             </button>
-            <button onclick="triggerCallFromChat('audio')" title="Start Voice Call" class="p-1.5 rounded-full hover:bg-white/10 text-emerald-100 hover:text-white transition">
+            <button onclick="triggerCallFromChat('audio')" id="btn-chat-audio-header" title="Start Voice Call" class="p-1.5 rounded-full hover:bg-white/10 text-emerald-100 hover:text-white transition">
               <i data-lucide="phone" class="w-4 h-4"></i>
             </button>
           </div>
@@ -724,7 +724,7 @@
             <div class="p-1.5 bg-emerald-100 text-wa-teal rounded-lg"><i data-lucide="map-pin" class="w-3.5 h-3.5"></i></div>
             <span>Attach Land Parcel</span>
           </button>
-          <button onclick="createMeetingRoom()" class="w-full text-left p-2 rounded-xl hover:bg-slate-50 flex items-center gap-2 text-slate-700 font-semibold transition">
+          <button onclick="createMeetingRoom()" id="btn-chat-attach-meet" class="w-full text-left p-2 rounded-xl hover:bg-slate-50 flex items-center gap-2 text-slate-700 font-semibold transition">
             <div class="p-1.5 bg-blue-100 text-blue-700 rounded-lg"><i data-lucide="video" class="w-3.5 h-3.5"></i></div>
             <span>Virtual Meeting Room</span>
           </button>
@@ -840,29 +840,29 @@
             </div>
 
             <!-- WhatsApp 4 Quick Actions -->
-            <div class="grid grid-cols-4 gap-2 w-full mt-4 pt-3 border-t border-slate-100">
-              <button onclick="contactProfileMessageAction()" class="flex flex-col items-center gap-1 p-2 rounded-xl hover:bg-emerald-50 text-slate-700 hover:text-wa-teal transition group">
+            <div class="grid grid-cols-4 gap-2 w-full mt-4 pt-3 border-t border-slate-100" id="cp-actions-row">
+              <button onclick="contactProfileMessageAction()" id="cp-btn-message" class="flex flex-col items-center gap-1 p-2 rounded-xl hover:bg-emerald-50 text-slate-700 hover:text-wa-teal transition group">
                 <div class="w-10 h-10 rounded-full bg-slate-100 group-hover:bg-emerald-100 flex items-center justify-center text-wa-teal">
                   <i data-lucide="message-square" class="w-5 h-5"></i>
                 </div>
                 <span class="text-[10px] font-bold">Message</span>
               </button>
 
-              <button onclick="contactProfileAudioCallAction()" class="flex flex-col items-center gap-1 p-2 rounded-xl hover:bg-emerald-50 text-slate-700 hover:text-wa-teal transition group">
+              <button onclick="contactProfileAudioCallAction()" id="cp-btn-audio" class="flex flex-col items-center gap-1 p-2 rounded-xl hover:bg-emerald-50 text-slate-700 hover:text-wa-teal transition group">
                 <div class="w-10 h-10 rounded-full bg-slate-100 group-hover:bg-emerald-100 flex items-center justify-center text-wa-teal">
                   <i data-lucide="phone" class="w-5 h-5"></i>
                 </div>
                 <span class="text-[10px] font-bold">Audio</span>
               </button>
 
-              <button onclick="contactProfileVideoCallAction()" class="flex flex-col items-center gap-1 p-2 rounded-xl hover:bg-emerald-50 text-slate-700 hover:text-wa-teal transition group">
+              <button onclick="contactProfileVideoCallAction()" id="cp-btn-video" class="flex flex-col items-center gap-1 p-2 rounded-xl hover:bg-emerald-50 text-slate-700 hover:text-wa-teal transition group">
                 <div class="w-10 h-10 rounded-full bg-slate-100 group-hover:bg-emerald-100 flex items-center justify-center text-wa-teal">
                   <i data-lucide="video" class="w-5 h-5"></i>
                 </div>
                 <span class="text-[10px] font-bold">Video</span>
               </button>
 
-              <button onclick="contactProfileMeetingAction()" class="flex flex-col items-center gap-1 p-2 rounded-xl hover:bg-emerald-50 text-slate-700 hover:text-wa-teal transition group">
+              <button onclick="contactProfileMeetingAction()" id="cp-btn-meet" class="flex flex-col items-center gap-1 p-2 rounded-xl hover:bg-emerald-50 text-slate-700 hover:text-wa-teal transition group">
                 <div class="w-10 h-10 rounded-full bg-slate-100 group-hover:bg-emerald-100 flex items-center justify-center text-wa-teal">
                   <i data-lucide="users" class="w-5 h-5"></i>
                 </div>
@@ -993,7 +993,7 @@
           </div>
 
           <!-- 5. Block & Report Actions -->
-          <div class="bg-white rounded-2xl shadow-xs border border-slate-200/80 p-2 space-y-1">
+          <div id="cp-moderation-card" class="bg-white rounded-2xl shadow-xs border border-slate-200/80 p-2 space-y-1">
             <button onclick="handleBlockContact()" class="w-full text-left px-3 py-2.5 rounded-xl hover:bg-rose-50 text-rose-600 font-bold text-xs flex items-center gap-2.5 transition">
               <i data-lucide="ban" class="w-4 h-4"></i>
               <span id="cp-block-label">Block Contact</span>

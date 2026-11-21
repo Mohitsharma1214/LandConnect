@@ -641,6 +641,8 @@ async def api_get_messages(request):
             conn.close()
 
     rows = await asyncio.to_thread(fetch_msgs)
+    if other_user_id != my_id:
+        asyncio.create_task(send_to_user(other_user_id, {"type": "messages_seen", "reader_id": my_id}))
     return JSONResponse(rows)
 
 async def api_conversations(request):
@@ -667,21 +669,20 @@ async def api_conversations(request):
                     last_m.message_type AS last_message_type,
                     last_m.created_at AS last_message_time,
                     last_m.sender_id AS last_message_sender_id,
+                    COALESCE(last_m.is_read, 0) AS last_message_is_read,
                     COALESCE(unread.cnt, 0) AS unread_count
                 FROM (
                     SELECT DISTINCT 
                         CASE WHEN sender_id = %s THEN receiver_id ELSE sender_id END AS other_user_id
                     FROM messages
-                    WHERE (sender_id = %s OR receiver_id = %s)
-                      AND sender_id != receiver_id
+                    WHERE sender_id = %s OR receiver_id = %s
                 ) conv
                 JOIN users u ON u.id = conv.other_user_id
                 LEFT JOIN LATERAL (
-                    SELECT content, message_type, created_at, sender_id
+                    SELECT content, message_type, created_at, sender_id, is_read
                     FROM messages
-                    WHERE ((sender_id = %s AND receiver_id = conv.other_user_id)
-                       OR (sender_id = conv.other_user_id AND receiver_id = %s))
-                      AND sender_id != receiver_id
+                    WHERE (sender_id = %s AND receiver_id = conv.other_user_id)
+                       OR (sender_id = conv.other_user_id AND receiver_id = %s)
                     ORDER BY created_at DESC
                     LIMIT 1
                 ) last_m ON true
@@ -721,6 +722,7 @@ async def api_send_message(request):
         return JSONResponse({"error": "Receiver and message content are required."}, status_code=400)
 
     # 1. INSTANT DISPATCH TO RECEIVER (0ms delay - do not wait for DB network latency!)
+    is_self = (sender_id == receiver_id)
     instant_msg = {
         "id": temp_id,
         "tempId": temp_id,
@@ -729,6 +731,7 @@ async def api_send_message(request):
         "listing_id": listing_id,
         "content": content,
         "message_type": message_type,
+        "is_read": 1 if is_self else 0,
         "created_at": datetime.utcnow().isoformat(),
         "sender_name": data.get("sender_name", ""),
         "sender_avatar": data.get("sender_avatar", ""),
@@ -742,10 +745,11 @@ async def api_send_message(request):
         "contact_phone": data.get("contact_phone"),
         "contact_bio": data.get("contact_bio")
     }
-    await send_to_user(receiver_id, {
-        "type": "new_message",
-        "message": instant_msg
-    })
+    if not is_self:
+        await send_to_user(receiver_id, {
+            "type": "new_message",
+            "message": instant_msg
+        })
 
     # 2. Persist to Neon DB in executor so loop is not blocked
     loop = asyncio.get_event_loop()
@@ -863,6 +867,25 @@ async def websocket_signaling(websocket: WebSocket):
             elif msg_type == "ping":
                 await websocket.send_text(json.dumps({"type": "pong"}))
 
+            elif msg_type == "mark_as_read":
+                target_sender_id = data.get("sender_id") or data.get("targetUserId")
+                if target_sender_id and authenticated_user_id:
+                    def update_read():
+                        conn = get_connection()
+                        try:
+                            cur = conn.cursor()
+                            cur.execute("UPDATE messages SET is_read = 1 WHERE sender_id = %s AND receiver_id = %s AND is_read = 0", (int(target_sender_id), authenticated_user_id))
+                            conn.commit()
+                            cur.close()
+                        finally:
+                            conn.close()
+                    asyncio.create_task(asyncio.to_thread(update_read))
+                    if int(target_sender_id) != int(authenticated_user_id):
+                        await send_to_user(int(target_sender_id), {
+                            "type": "messages_seen",
+                            "reader_id": authenticated_user_id
+                        })
+
             elif msg_type == "typing":
                 target_user_id = data.get("targetUserId")
                 is_typing = bool(data.get("isTyping", False))
@@ -882,6 +905,7 @@ async def websocket_signaling(websocket: WebSocket):
                     message_type = data.get("message_type", "text")
                     listing_id = data.get("listing_id")
                     temp_id = data.get("tempId") or f"msg_{uuid.uuid4().hex[:12]}"
+                    is_self = (receiver_id == authenticated_user_id)
 
                     instant_msg = {
                         "id": temp_id,
@@ -891,6 +915,7 @@ async def websocket_signaling(websocket: WebSocket):
                         "listing_id": listing_id,
                         "content": content,
                         "message_type": message_type,
+                        "is_read": 1 if is_self else 0,
                         "created_at": datetime.now(timezone.utc).isoformat(),
                         "sender_name": data.get("sender_name", ""),
                         "sender_avatar": data.get("sender_avatar", ""),
@@ -906,15 +931,17 @@ async def websocket_signaling(websocket: WebSocket):
                     }
 
                     # 1. INSTANT DISPATCH TO RECEIVER OVER WS (0ms)
-                    await send_to_user(receiver_id, {
-                        "type": "new_message",
-                        "message": instant_msg
-                    })
+                    if not is_self:
+                        await send_to_user(receiver_id, {
+                            "type": "new_message",
+                            "message": instant_msg
+                        })
 
                     # 2. IMMEDIATE ACK TO SENDER (0ms)
                     await websocket.send_text(json.dumps({
                         "type": "message_sent_ack",
-                        "tempId": temp_id
+                        "tempId": temp_id,
+                        "is_read": 1 if is_self else 0
                     }))
 
                     # 3. Async DB write without blocking

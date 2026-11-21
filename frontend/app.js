@@ -1335,11 +1335,34 @@ function renderContactsList() {
       last_message_type: conv ? conv.last_message_type : null,
       last_message_time: conv ? conv.last_message_time : null,
       last_message_sender_id: conv ? Number(conv.last_message_sender_id) : null,
+      last_message_is_read: conv ? Number(conv.last_message_is_read || 0) : 0,
       unread_count: conv ? Number(conv.unread_count) : 0,
       is_pinned: pinnedIds.includes(Number(u.id)),
-      is_archived: archivedIds.includes(Number(u.id))
+      is_archived: archivedIds.includes(Number(u.id)),
+      is_self: false
     };
   });
+
+  // Prepend current user as Self Chat (WhatsApp "Message yourself")
+  if (currentUser) {
+    const selfConv = recentConversations.find(c => Number(c.peer_id) === myId);
+    entries.unshift({
+      id: myId,
+      name: `${currentUser.name} (You)`,
+      avatar: currentUser.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(currentUser.name)}&background=075E54&color=fff`,
+      role: currentUser.role || 'user',
+      phone_masked: currentUser.phone_masked || currentUser.phone || '',
+      last_message: selfConv ? selfConv.last_message : null,
+      last_message_type: selfConv ? selfConv.last_message_type : null,
+      last_message_time: selfConv ? selfConv.last_message_time : null,
+      last_message_sender_id: myId,
+      last_message_is_read: 1,
+      unread_count: 0,
+      is_pinned: pinnedIds.includes(myId),
+      is_archived: archivedIds.includes(myId),
+      is_self: true
+    });
+  }
 
   // Filter out archived for main view
   let activeChats = entries.filter(e => !e.is_archived);
@@ -1370,7 +1393,7 @@ function renderContactsList() {
   // Sort Active Chats:
   // 1. Pinned chats first
   // 2. Most recent message time descending
-  // 3. Contacts with no messages alphabetically
+  // 3. Contacts with no messages (keep self on top if no messages)
   activeChats.sort((a, b) => {
     if (a.is_pinned && !b.is_pinned) return -1;
     if (!a.is_pinned && b.is_pinned) return 1;
@@ -1383,6 +1406,9 @@ function renderContactsList() {
     }
     if (timeA && !timeB) return -1;
     if (!timeA && timeB) return 1;
+
+    if (a.is_self && !b.is_self) return -1;
+    if (!a.is_self && b.is_self) return 1;
 
     return a.name.localeCompare(b.name);
   });
@@ -1406,10 +1432,12 @@ function renderContactsList() {
 function renderChatRowHtml(u, isArchivedView = false) {
   const isMine = currentUser && (u.last_message_sender_id === Number(currentUser.id));
   const timeFormatted = formatChatTime(u.last_message_time);
-  const isOnline = onlineUserIds.has(Number(u.id));
+  const isOnline = u.is_self ? true : onlineUserIds.has(Number(u.id));
   const isTyping = peerTypingMap.has(Number(u.id));
   
-  let previewText = isOnline ? '<span class="text-emerald-600 font-medium">Online</span>' : '<span class="text-slate-400">Offline</span>';
+  let previewText = u.is_self 
+    ? '<span class="text-slate-400">Message yourself</span>'
+    : (isOnline ? '<span class="text-emerald-600 font-medium">Online</span>' : '<span class="text-slate-400">Offline</span>');
   let previewPrefix = '';
 
   if (isTyping) {
@@ -1417,7 +1445,10 @@ function renderChatRowHtml(u, isArchivedView = false) {
     previewText = '<span class="text-emerald-600 font-semibold italic flex items-center gap-1">typing<span class="inline-flex"><span class="animate-bounce">.</span><span class="animate-bounce [animation-delay:0.15s]">.</span><span class="animate-bounce [animation-delay:0.3s]">.</span></span></span>';
   } else if (u.last_message) {
     if (isMine) {
-      previewPrefix = '<span class="text-emerald-600 mr-0.5 font-bold">✓✓</span> ';
+      const isBlue = u.is_self || Number(u.last_message_is_read) === 1;
+      previewPrefix = isBlue 
+        ? '<span class="text-[#53bdeb] mr-0.5 font-bold">✓✓</span> '
+        : '<span class="text-slate-400 mr-0.5 font-bold">✓✓</span> ';
     }
     if (u.last_message_type === 'audio') {
       previewText = '🎙️ Voice note';
@@ -1701,10 +1732,21 @@ function updateChatPeerStatusUI() {
   if (!container) return;
 
   const peerId = Number(activeChatPeer.id);
-  const isOnline = onlineUserIds.has(peerId);
+  const myId = currentUser ? Number(currentUser.id) : 0;
+  const isSelf = myId > 0 && (peerId === myId);
+  const isOnline = isSelf ? true : onlineUserIds.has(peerId);
 
   const countEl = document.getElementById('chat-peer-msg-count');
   const msgCountText = countEl ? countEl.textContent : '0 messages';
+
+  if (isSelf) {
+    container.innerHTML = `
+      <span id="chat-peer-status-text" class="font-normal text-emerald-100/90 truncate">Message yourself</span>
+      <span class="text-white/40">•</span>
+      <span id="chat-peer-msg-count" class="font-medium text-emerald-100/90 truncate">${msgCountText || '0 messages'}</span>
+    `;
+    return;
+  }
 
   // In WhatsApp, the status bar consistently displays online/offline
   container.innerHTML = `
@@ -1719,7 +1761,11 @@ let chatSyncInterval = null;
 
 async function startChatWithUser(userId, name, avatar, role) {
   const targetId = Number(userId);
-  activeChatPeer = { id: targetId, name, avatar, role };
+  const myId = currentUser ? Number(currentUser.id) : 0;
+  const isSelf = (myId > 0 && targetId === myId);
+  const displayName = isSelf ? `${(name || '').replace(/\s*\(You\)$/, '')} (You)` : name;
+
+  activeChatPeer = { id: targetId, name: displayName, avatar, role, is_self: isSelf };
 
   const peerName = document.getElementById('chat-peer-name');
   const peerAvatar = document.getElementById('chat-peer-avatar');
@@ -1727,9 +1773,28 @@ async function startChatWithUser(userId, name, avatar, role) {
   const countEl = document.getElementById('chat-peer-msg-count');
   const messagesContainer = document.getElementById('chat-messages-container');
 
-  if (peerName) peerName.textContent = name;
+  if (peerName) peerName.textContent = displayName;
   if (peerAvatar) peerAvatar.src = avatar;
   if (peerRole) peerRole.textContent = role;
+
+  // Block/hide Audio call, Video call, and Meeting room buttons on self-chat
+  const btnMeet = document.getElementById('btn-chat-meet-header');
+  const btnVideo = document.getElementById('btn-chat-video-header');
+  const btnAudio = document.getElementById('btn-chat-audio-header');
+  const btnAttachMeet = document.getElementById('btn-chat-attach-meet');
+
+  if (isSelf) {
+    if (btnMeet) btnMeet.classList.add('hidden');
+    if (btnVideo) btnVideo.classList.add('hidden');
+    if (btnAudio) btnAudio.classList.add('hidden');
+    if (btnAttachMeet) btnAttachMeet.classList.add('hidden');
+  } else {
+    if (btnMeet) btnMeet.classList.remove('hidden');
+    if (btnVideo) btnVideo.classList.remove('hidden');
+    if (btnAudio) btnAudio.classList.remove('hidden');
+    if (btnAttachMeet) btnAttachMeet.classList.remove('hidden');
+  }
+
   updateChatPeerStatusUI();
   updateFloatingTypingUI();
 
@@ -1857,7 +1922,10 @@ function closeContactProfile() {
 function renderContactProfileUI(user, isLoadingListings = false) {
   if (!user) return;
 
-  const isOnline = onlineUserIds.has(Number(user.id)) || Boolean(user.is_online);
+  const myId = currentUser ? Number(currentUser.id) : 0;
+  const isSelf = myId > 0 && (Number(user.id) === myId);
+
+  const isOnline = isSelf ? true : (onlineUserIds.has(Number(user.id)) || Boolean(user.is_online));
   const userRole = (user.role || 'user').toLowerCase();
   const defaultStatus = userRole === 'seller' ? 'Direct landowner offering prime commercial and farm plots in Bengaluru outskirts.' :
                         userRole === 'broker' ? 'Certified RERA Real Estate Broker specializing in greenfield projects & high ROI land.' :
@@ -1870,7 +1938,7 @@ function renderContactProfileUI(user, isLoadingListings = false) {
   if (avatarEl) avatarEl.src = avatarUrl;
 
   const nameEl = document.getElementById('cp-name');
-  if (nameEl) nameEl.textContent = user.name || 'User';
+  if (nameEl) nameEl.textContent = isSelf ? `${(user.name || 'User').replace(/\s*\(You\)$/, '')} (You)` : (user.name || 'User');
 
   const roleEl = document.getElementById('cp-role-badge');
   if (roleEl) {
@@ -1890,7 +1958,11 @@ function renderContactProfileUI(user, isLoadingListings = false) {
   const statusDot = document.getElementById('cp-status-dot');
   const statusLabel = document.getElementById('cp-status-label');
   if (statusPill && statusDot && statusLabel) {
-    if (isOnline) {
+    if (isSelf) {
+      statusPill.className = 'inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200';
+      statusDot.className = 'w-2 h-2 rounded-full bg-emerald-500';
+      statusLabel.textContent = 'Message yourself';
+    } else if (isOnline) {
       statusPill.className = 'inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200';
       statusDot.className = 'w-2 h-2 rounded-full bg-emerald-500 animate-pulse';
       statusLabel.textContent = 'Online';
@@ -1898,6 +1970,32 @@ function renderContactProfileUI(user, isLoadingListings = false) {
       statusPill.className = 'inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-semibold bg-slate-100 text-slate-600 border border-slate-200';
       statusDot.className = 'w-2 h-2 rounded-full bg-slate-400';
       statusLabel.textContent = 'Offline';
+    }
+  }
+
+  // Hide call & meet buttons on self contact profile
+  const btnAudio = document.getElementById('cp-btn-audio');
+  const btnVideo = document.getElementById('cp-btn-video');
+  const btnMeet = document.getElementById('cp-btn-meet');
+  const actionsRow = document.getElementById('cp-actions-row');
+  if (btnAudio) btnAudio.classList.toggle('hidden', isSelf);
+  if (btnVideo) btnVideo.classList.toggle('hidden', isSelf);
+  if (btnMeet) btnMeet.classList.toggle('hidden', isSelf);
+  if (actionsRow) {
+    if (isSelf) {
+      actionsRow.className = 'grid grid-cols-1 gap-2 w-full mt-4 pt-3 border-t border-slate-100';
+    } else {
+      actionsRow.className = 'grid grid-cols-4 gap-2 w-full mt-4 pt-3 border-t border-slate-100';
+    }
+  }
+
+  // Moderation card (Block & Report) - strictly DO NOT show on self profile
+  const modCard = document.getElementById('cp-moderation-card');
+  if (modCard) {
+    if (isSelf) {
+      modCard.classList.add('hidden');
+    } else {
+      modCard.classList.remove('hidden');
     }
   }
 
@@ -2074,6 +2172,10 @@ function contactProfileMessageAction() {
 function contactProfileAudioCallAction() {
   if (!currentViewingContact) return;
   const user = currentViewingContact;
+  if (currentUser && Number(user.id) === Number(currentUser.id)) {
+    showToast("You cannot voice call yourself.", "info");
+    return;
+  }
   closeContactProfile();
   initiateDirectCall(user.id, user.name, user.avatar, user.role, 'audio');
 }
@@ -2081,6 +2183,10 @@ function contactProfileAudioCallAction() {
 function contactProfileVideoCallAction() {
   if (!currentViewingContact) return;
   const user = currentViewingContact;
+  if (currentUser && Number(user.id) === Number(currentUser.id)) {
+    showToast("You cannot video call yourself.", "info");
+    return;
+  }
   closeContactProfile();
   initiateDirectCall(user.id, user.name, user.avatar, user.role, 'video');
 }
@@ -2088,6 +2194,10 @@ function contactProfileVideoCallAction() {
 function contactProfileMeetingAction() {
   if (!currentViewingContact) return;
   const user = currentViewingContact;
+  if (currentUser && Number(user.id) === Number(currentUser.id)) {
+    showToast("Meeting rooms cannot be created in self chat.", "info");
+    return;
+  }
   closeContactProfile();
   startChatWithUser(user.id, user.name, user.avatar, user.role);
   createMeetingRoom();
@@ -2423,6 +2533,13 @@ async function fetchChatMessages(otherUserId) {
       updateUnreadBadgesCounter();
       renderContactsList();
     }
+
+    // Real-time mark-as-read signaling over WebSocket so peer immediately sees blue double ticks
+    if (ws && ws.readyState === WebSocket.OPEN && currentUser && targetId !== Number(currentUser.id)) {
+      try {
+        ws.send(JSON.stringify({ type: 'mark_as_read', sender_id: targetId }));
+      } catch (e) {}
+    }
   } catch (err) {
     console.error('Error fetching messages:', err);
   }
@@ -2445,6 +2562,17 @@ async function syncChatMessages(otherUserId) {
       if (!exists) {
         appendMessageToChat(m, false);
         addedAny = true;
+      } else if (Number(m.is_read) === 1) {
+        // Real-time update to double blue tick if peer read it
+        const bubble = document.getElementById(`msg-bubble-${m.id}`) || document.getElementById(`msg-bubble-${m.tempId}`);
+        if (bubble) {
+          const icon = bubble.querySelector('i[data-lucide="check-check"], i[data-lucide="check"]');
+          if (icon && !icon.classList.contains('text-[#53bdeb]')) {
+            icon.setAttribute('data-lucide', 'check-check');
+            icon.className = 'w-3.5 h-3.5 text-[#53bdeb]';
+            addedAny = true;
+          }
+        }
       }
     }
     if (addedAny) {
@@ -2463,9 +2591,14 @@ async function syncChatMessages(otherUserId) {
 function updateMessageStatus(tempId, permanentId) {
   if (!tempId) return;
   const statusEl = document.getElementById(`msg-status-${tempId}`);
+  const isSelf = currentUser && activeChatPeer && (Number(activeChatPeer.id) === Number(currentUser.id));
   if (statusEl) {
     statusEl.id = `msg-status-${permanentId}`;
-    statusEl.innerHTML = '<i data-lucide="check-check" class="w-3 h-3 text-emerald-600"></i>';
+    if (isSelf) {
+      statusEl.innerHTML = '<i data-lucide="check-check" class="w-3.5 h-3.5 text-[#53bdeb]"></i>';
+    } else {
+      statusEl.innerHTML = '<i data-lucide="check-check" class="w-3.5 h-3.5 text-slate-400"></i>';
+    }
     if (window.lucide) lucide.createIcons();
   }
   const bubbleEl = document.getElementById(`msg-bubble-${tempId}`);
@@ -2476,6 +2609,8 @@ function updateMessageStatus(tempId, permanentId) {
 
 function generateMessageHtml(m, isPending = false) {
   const isMine = currentUser && (Number(m.sender_id) === Number(currentUser.id));
+  const isSelf = Number(m.sender_id) === Number(m.receiver_id) || (currentUser && activeChatPeer && Number(activeChatPeer.id) === Number(currentUser.id));
+  const isSeen = isSelf || Number(m.is_read) === 1;
   const time = m.created_at ? new Date(parseDateSafe(m.created_at)).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   const bubbleId = m.tempId ? `msg-bubble-${m.tempId}` : `msg-bubble-${m.id}`;
   const statusId = m.tempId ? `msg-status-${m.tempId}` : `msg-status-${m.id}`;
@@ -2597,9 +2732,16 @@ function generateMessageHtml(m, isPending = false) {
     `;
   }
 
-  const checkIcon = isPending
-    ? `<span id="${statusId}"><i data-lucide="check" class="w-3 h-3 text-slate-400"></i></span>`
-    : `<span id="${statusId}"><i data-lucide="check-check" class="w-3 h-3 text-emerald-600"></i></span>`;
+  let checkIcon = '';
+  if (isMine) {
+    if (isPending && !isSelf) {
+      checkIcon = `<span id="${statusId}"><i data-lucide="check" class="w-3.5 h-3.5 text-slate-400"></i></span>`;
+    } else if (isSeen) {
+      checkIcon = `<span id="${statusId}"><i data-lucide="check-check" class="w-3.5 h-3.5 text-[#53bdeb]"></i></span>`;
+    } else {
+      checkIcon = `<span id="${statusId}"><i data-lucide="check-check" class="w-3.5 h-3.5 text-slate-400"></i></span>`;
+    }
+  }
 
   return `
     <div id="${bubbleId}" class="flex ${isMine ? 'justify-end' : 'justify-start'}">
@@ -2745,6 +2887,13 @@ async function createMeetingRoom() {
   hideAttachmentMenu();
   if (!activeChatPeer) return;
 
+  const targetPeerId = Number(activeChatPeer.id);
+  const myId = currentUser ? Number(currentUser.id) : 0;
+  if (myId > 0 && targetPeerId === myId) {
+    showToast("Meeting rooms cannot be created in self chat.", "info");
+    return;
+  }
+
   const generatedRoomId = 'land-meet-' + Math.random().toString(36).substring(2, 7) + '-' + Date.now().toString(36).slice(-3);
   const meetingMsg = `Meeting Room started for live property discussion. Room Code: ${generatedRoomId}`;
 
@@ -2762,7 +2911,6 @@ async function createMeetingRoom() {
   };
   appendMessageToChat(optimisticMsg, true);
 
-  const targetPeerId = Number(activeChatPeer.id);
   if (!chatMessagesCache.has(targetPeerId)) {
     chatMessagesCache.set(targetPeerId, []);
   }
@@ -2822,39 +2970,44 @@ async function sendChatMessage() {
   input.value = '';
   handleChatInputTyping();
 
+  const myId = currentUser ? Number(currentUser.id) : 0;
+  const targetPeerId = Number(activeChatPeer.id);
+  const isSelf = (myId > 0 && targetPeerId === myId);
+
   // Optimistic instant render on sender: 0ms delay!
   const tempId = 'msg_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5);
   const optimisticMsg = {
     id: tempId,
     tempId: tempId,
-    sender_id: currentUser ? currentUser.id : 0,
+    sender_id: myId,
     receiver_id: activeChatPeer.id,
     content: content,
     message_type: 'text',
+    is_read: isSelf ? 1 : 0,
     created_at: new Date().toISOString()
   };
-  appendMessageToChat(optimisticMsg, true);
+  // For self chat, not pending -> instantly renders WhatsApp double blue ticks!
+  appendMessageToChat(optimisticMsg, !isSelf);
 
-  const targetPeerId = Number(activeChatPeer.id);
   if (!chatMessagesCache.has(targetPeerId)) {
     chatMessagesCache.set(targetPeerId, []);
   }
   chatMessagesCache.get(targetPeerId).push(optimisticMsg);
 
   // Update in-memory recent conversation & promote to top
-  const peerId = Number(activeChatPeer.id);
   const nowIso = new Date().toISOString();
-  let conv = recentConversations.find(c => Number(c.peer_id) === peerId);
+  let conv = recentConversations.find(c => Number(c.peer_id) === targetPeerId);
   if (!conv) {
     conv = {
-      peer_id: peerId,
+      peer_id: targetPeerId,
       peer_name: activeChatPeer.name || 'User',
       peer_avatar: activeChatPeer.avatar || '',
       peer_role: activeChatPeer.role || 'buyer',
       last_message: content,
       last_message_type: 'text',
       last_message_time: nowIso,
-      last_message_sender_id: currentUser ? Number(currentUser.id) : 0,
+      last_message_sender_id: myId,
+      last_message_is_read: isSelf ? 1 : 0,
       unread_count: 0
     };
     recentConversations.unshift(conv);
@@ -2862,7 +3015,9 @@ async function sendChatMessage() {
     conv.last_message = content;
     conv.last_message_type = 'text';
     conv.last_message_time = nowIso;
-    conv.last_message_sender_id = currentUser ? Number(currentUser.id) : 0;
+    conv.last_message_sender_id = myId;
+    conv.last_message_is_read = isSelf ? 1 : 0;
+    conv.unread_count = 0;
     const idx = recentConversations.indexOf(conv);
     if (idx > -1) recentConversations.splice(idx, 1);
     recentConversations.unshift(conv);
@@ -3194,6 +3349,10 @@ function updateVoiceBtnIcon(msgId, isPlaying) {
 
 function triggerCallFromChat(callType) {
   if (!activeChatPeer) return;
+  if (currentUser && Number(activeChatPeer.id) === Number(currentUser.id)) {
+    showToast("You cannot call yourself.", "info");
+    return;
+  }
   initiateDirectCall(activeChatPeer.id, activeChatPeer.name, activeChatPeer.avatar, activeChatPeer.role, callType);
 }
 
@@ -4763,6 +4922,7 @@ function initWebSocket() {
           const msgTime = msg.created_at || new Date().toISOString();
           let conv = recentConversations.find(c => Number(c.peer_id) === peerId);
           if (!conv) {
+            const isSelfMsg = (msgSenderId === msgReceiverId);
             conv = {
               peer_id: peerId,
               peer_name: msg.sender_name || 'User',
@@ -4772,15 +4932,18 @@ function initWebSocket() {
               last_message_type: msg.message_type,
               last_message_time: msgTime,
               last_message_sender_id: msgSenderId,
-              unread_count: isCurrentChat ? 0 : 1
+              last_message_is_read: isSelfMsg ? 1 : (isCurrentChat ? 1 : 0),
+              unread_count: (isCurrentChat || isSelfMsg) ? 0 : 1
             };
             recentConversations.unshift(conv);
           } else {
+            const isSelfMsg = (msgSenderId === msgReceiverId);
             conv.last_message = msg.content;
             conv.last_message_type = msg.message_type;
             conv.last_message_time = msgTime;
             conv.last_message_sender_id = msgSenderId;
-            if (!isCurrentChat) {
+            conv.last_message_is_read = isSelfMsg ? 1 : (isCurrentChat ? 1 : 0);
+            if (!isCurrentChat && !isSelfMsg) {
               conv.unread_count = (Number(conv.unread_count) || 0) + 1;
             } else {
               conv.unread_count = 0;
@@ -4788,6 +4951,12 @@ function initWebSocket() {
             const idx = recentConversations.indexOf(conv);
             if (idx > -1) recentConversations.splice(idx, 1);
             recentConversations.unshift(conv);
+          }
+
+          if (isCurrentChat && msgSenderId !== myId && !isSelfMsg && ws && ws.readyState === WebSocket.OPEN) {
+            try {
+              ws.send(JSON.stringify({ type: 'mark_as_read', sender_id: msgSenderId }));
+            } catch (e) {}
           }
 
           // Keep in-memory cache synchronized
@@ -4801,6 +4970,26 @@ function initWebSocket() {
 
           renderContactsList();
           updateUnreadBadgesCounter();
+          break;
+        }
+
+        case 'messages_seen': {
+          const readerId = Number(data.reader_id);
+          if (activeChatPeer && Number(activeChatPeer.id) === readerId) {
+            document.querySelectorAll('#chat-messages-container i[data-lucide="check-check"], #chat-messages-container i[data-lucide="check"]').forEach(icon => {
+              icon.setAttribute('data-lucide', 'check-check');
+              icon.className = 'w-3.5 h-3.5 text-[#53bdeb]';
+            });
+            if (chatMessagesCache.has(readerId)) {
+              chatMessagesCache.get(readerId).forEach(m => { m.is_read = 1; });
+            }
+          }
+          const conv = recentConversations.find(c => Number(c.peer_id) === readerId);
+          if (conv) {
+            conv.last_message_is_read = 1;
+          }
+          renderContactsList();
+          if (window.lucide) lucide.createIcons();
           break;
         }
 
