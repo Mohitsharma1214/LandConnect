@@ -2377,3 +2377,224 @@ function recalculateEMI() {
   if (interestEl) interestEl.textContent = '₹' + Math.round(totalInterest).toLocaleString('en-IN');
   if (totalEl) totalEl.textContent = '₹' + Math.round(totalRepay).toLocaleString('en-IN');
 }
+
+// ============================================================================
+// SELLER LOCATION TOOLKIT: GPS AUTO-DETECT, REGIONAL PRESETS & MAP PIN PICKER
+// ============================================================================
+
+function applyPresetLocation(address, lat, lng, addrId, latId, lngId) {
+  const addrInput = document.getElementById(addrId);
+  const latInput = document.getElementById(latId);
+  const lngInput = document.getElementById(lngId);
+
+  if (addrInput) addrInput.value = address;
+  if (latInput) latInput.value = Number(lat).toFixed(5);
+  if (lngInput) lngInput.value = Number(lng).toFixed(5);
+
+  showToast(`📍 Location set: ${address}`);
+}
+
+function detectGPSLocation(latId, lngId, statusId) {
+  const statusEl = document.getElementById(statusId);
+  const latInput = document.getElementById(latId);
+  const lngInput = document.getElementById(lngId);
+
+  if (!navigator.geolocation) {
+    if (statusEl) statusEl.innerHTML = '<span class="text-amber-600">⚠️ Geolocation not supported by browser.</span>';
+    return;
+  }
+
+  if (statusEl) statusEl.innerHTML = '<span class="text-wa-teal animate-pulse">🛰️ Detecting high-precision GPS...</span>';
+
+  navigator.geolocation.getCurrentPosition(
+    async (pos) => {
+      const lat = pos.coords.latitude.toFixed(5);
+      const lng = pos.coords.longitude.toFixed(5);
+      const acc = Math.round(pos.coords.accuracy || 10);
+
+      if (latInput) latInput.value = lat;
+      if (lngInput) lngInput.value = lng;
+
+      if (statusEl) {
+        statusEl.innerHTML = `<span class="text-emerald-700 font-bold">✓ GPS Fixed: ${lat}, ${lng} (±${acc}m)</span>`;
+      }
+      showToast(`📍 GPS coordinates detected (±${acc}m accuracy)`);
+    },
+    (err) => {
+      console.warn('GPS detection warning:', err);
+      if (statusEl) {
+        statusEl.innerHTML = `<span class="text-slate-500">GPS unavailable (${err.message}). Tap "Pick on Map".</span>`;
+      }
+    },
+    { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+  );
+}
+
+// Map Pin Picker State
+let pickerMapInstance = null;
+let pickerMarkerInstance = null;
+let activePickerLatInputId = null;
+let activePickerLngInputId = null;
+let activePickerAddrInputId = null;
+let currentPickerLat = 13.29240;
+let currentPickerLng = 77.54320;
+let lastGeocodedAddress = '';
+
+function openMapPinPicker(latId, lngId, addrId) {
+  activePickerLatInputId = latId;
+  activePickerLngInputId = lngId;
+  activePickerAddrInputId = addrId;
+
+  const latInput = document.getElementById(latId);
+  const lngInput = document.getElementById(lngId);
+
+  if (latInput && latInput.value && !isNaN(parseFloat(latInput.value))) {
+    currentPickerLat = parseFloat(latInput.value);
+  }
+  if (lngInput && lngInput.value && !isNaN(parseFloat(lngInput.value))) {
+    currentPickerLng = parseFloat(lngInput.value);
+  }
+
+  const modal = document.getElementById('map-picker-modal');
+  if (modal) modal.classList.remove('hidden');
+
+  updatePickerDisplay(currentPickerLat, currentPickerLng);
+
+  setTimeout(() => {
+    initOrUpdatePickerMap();
+    if (window.lucide) lucide.createIcons();
+  }, 100);
+}
+
+function closeMapPinPicker() {
+  const modal = document.getElementById('map-picker-modal');
+  if (modal) modal.classList.add('hidden');
+}
+
+function updatePickerDisplay(lat, lng) {
+  currentPickerLat = Number(lat).toFixed(5);
+  currentPickerLng = Number(lng).toFixed(5);
+
+  const latValEl = document.getElementById('picker-lat-val');
+  const lngValEl = document.getElementById('picker-lng-val');
+  const statusEl = document.getElementById('picker-geocode-status');
+
+  if (latValEl) latValEl.textContent = currentPickerLat;
+  if (lngValEl) lngValEl.textContent = currentPickerLng;
+  if (statusEl) statusEl.textContent = '📍 Updating...';
+
+  // Debounced reverse geocoding preview
+  clearTimeout(window._geoPreviewTimer);
+  window._geoPreviewTimer = setTimeout(async () => {
+    try {
+      const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${currentPickerLat}&lon=${currentPickerLng}`);
+      if (res.ok) {
+        const data = await res.json();
+        const displayName = data.display_name ? data.display_name.split(',').slice(0, 3).join(',') : 'Bengaluru Area';
+        lastGeocodedAddress = displayName;
+        if (statusEl) statusEl.textContent = `📍 ${displayName}`;
+      } else {
+        if (statusEl) statusEl.textContent = '📍 Custom GPS Point';
+      }
+    } catch {
+      if (statusEl) statusEl.textContent = '📍 Custom GPS Point';
+    }
+  }, 600);
+}
+
+function initOrUpdatePickerMap() {
+  if (!window.L) {
+    console.warn('Leaflet library loading fallback');
+    return;
+  }
+
+  const mapContainer = document.getElementById('picker-map-container');
+  if (!mapContainer) return;
+
+  if (!pickerMapInstance) {
+    pickerMapInstance = L.map('picker-map-container', {
+      zoomControl: true
+    }).setView([parseFloat(currentPickerLat), parseFloat(currentPickerLng)], 14);
+
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+      attribution: '© OpenStreetMap'
+    }).addTo(pickerMapInstance);
+
+    pickerMarkerInstance = L.marker([parseFloat(currentPickerLat), parseFloat(currentPickerLng)], {
+      draggable: true
+    }).addTo(pickerMapInstance);
+
+    pickerMarkerInstance.on('dragend', (e) => {
+      const pos = e.target.getLatLng();
+      updatePickerDisplay(pos.lat, pos.lng);
+    });
+
+    pickerMapInstance.on('click', (e) => {
+      pickerMarkerInstance.setLatLng(e.latlng);
+      updatePickerDisplay(e.latlng.lat, e.latlng.lng);
+    });
+  } else {
+    pickerMapInstance.invalidateSize();
+    pickerMapInstance.setView([parseFloat(currentPickerLat), parseFloat(currentPickerLng)], 14);
+    if (pickerMarkerInstance) {
+      pickerMarkerInstance.setLatLng([parseFloat(currentPickerLat), parseFloat(currentPickerLng)]);
+    }
+  }
+}
+
+function panPickerMap(lat, lng, name) {
+  updatePickerDisplay(lat, lng);
+  if (pickerMapInstance) {
+    pickerMapInstance.setView([lat, lng], 14);
+    if (pickerMarkerInstance) {
+      pickerMarkerInstance.setLatLng([lat, lng]);
+    }
+  }
+  const statusEl = document.getElementById('picker-geocode-status');
+  if (statusEl) statusEl.textContent = `📍 ${name}`;
+}
+
+function detectGPSInsidePicker() {
+  const statusEl = document.getElementById('picker-geocode-status');
+  if (!navigator.geolocation) {
+    if (statusEl) statusEl.textContent = 'GPS not supported';
+    return;
+  }
+
+  if (statusEl) statusEl.textContent = '🛰️ Pinpointing GPS...';
+
+  navigator.geolocation.getCurrentPosition(
+    (pos) => {
+      const lat = pos.coords.latitude;
+      const lng = pos.coords.longitude;
+      panPickerMap(lat, lng, 'My Location');
+      showToast('📍 Pin moved to your current GPS position');
+    },
+    (err) => {
+      if (statusEl) statusEl.textContent = 'GPS permission denied';
+      showToast('⚠️ GPS location unavailable');
+    },
+    { enableHighAccuracy: true, timeout: 8000 }
+  );
+}
+
+function confirmMapPinLocation() {
+  if (activePickerLatInputId) {
+    const latInput = document.getElementById(activePickerLatInputId);
+    if (latInput) latInput.value = currentPickerLat;
+  }
+  if (activePickerLngInputId) {
+    const lngInput = document.getElementById(activePickerLngInputId);
+    if (lngInput) lngInput.value = currentPickerLng;
+  }
+  if (activePickerAddrInputId && lastGeocodedAddress) {
+    const addrInput = document.getElementById(activePickerAddrInputId);
+    if (addrInput && (!addrInput.value || addrInput.value.trim() === '')) {
+      addrInput.value = lastGeocodedAddress;
+    }
+  }
+
+  closeMapPinPicker();
+  showToast(`📍 Set GPS: ${currentPickerLat}, ${currentPickerLng}`);
+}
