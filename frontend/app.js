@@ -47,6 +47,20 @@ let callSeconds = 0;
 let isAudioMuted = false;
 let isVideoMuted = false;
 
+// --- Multi-Party Meeting Room State ---
+let currentMeetingRoomId = null;
+let currentNewRoomId = null;
+let meetingLocalStream = null;
+let meetingScreenStream = null;
+let isMeetingScreenSharing = false;
+let isMeetingAudioMuted = false;
+let isMeetingVideoMuted = false;
+let meetingPeerConnections = new Map(); // peerId -> RTCPeerConnection
+let meetingPeerStreams = new Map();     // peerId -> MediaStream
+let meetingPeerInfo = new Map();        // peerId -> { id, name, avatar, role }
+let meetingPendingIce = new Map();       // peerId -> [candidate]
+let pendingUrlRoomId = null;
+
 const rtcConfig = {
   iceServers: [
     { urls: 'stun:stun.l.google.com:19302' },
@@ -227,7 +241,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
 
     initWebSocket();
+    checkUrlForMeetingRoom();
   } else {
+    checkUrlForMeetingRoom();
     showAuthScreen();
   }
 });
@@ -272,6 +288,14 @@ function showMainApp() {
   applyUserRoleUI();
   switchTab(activeTab || 'feed');
   if (window.lucide) lucide.createIcons();
+
+  if (pendingUrlRoomId) {
+    const rId = pendingUrlRoomId;
+    pendingUrlRoomId = null;
+    setTimeout(() => {
+      joinMultiPartyMeetingRoom(rId);
+    }, 500);
+  }
 }
 
 function setAuthMode(mode) {
@@ -1860,16 +1884,21 @@ function generateMessageHtml(m, isPending = false) {
 
   // If meeting room invitation
   if (m.message_type === 'meeting') {
+    const roomIdMatch = m.content && m.content.match(/(?:Room Code:|room=)\s*([a-zA-Z0-9_\-]+)/i);
+    const roomId = m.room_id || (roomIdMatch ? roomIdMatch[1] : null) || 'land-deal-room';
     messageContentHtml = `
       <div class="bg-gradient-to-r from-wa-teal to-wa-tealDark text-white p-3 rounded-2xl shadow-md border border-emerald-400/30 my-1">
-        <div class="flex items-center gap-2 mb-1">
-          <div class="w-6 h-6 rounded-full bg-emerald-400/20 flex items-center justify-center">
-            <i data-lucide="video" class="w-3.5 h-3.5 text-emerald-300"></i>
+        <div class="flex items-center justify-between gap-2 mb-1">
+          <div class="flex items-center gap-2">
+            <div class="w-6 h-6 rounded-full bg-emerald-400/20 flex items-center justify-center">
+              <i data-lucide="video" class="w-3.5 h-3.5 text-emerald-300"></i>
+            </div>
+            <span class="font-bold text-xs">Virtual Meeting Room</span>
           </div>
-          <span class="font-bold text-xs">Virtual Meeting Room</span>
+          <span class="text-[9px] bg-white/20 px-1.5 py-0.5 rounded font-mono font-semibold">${roomId}</span>
         </div>
         <p class="text-[11px] text-emerald-100">${m.content}</p>
-        <button onclick="joinMeetingRoomFromChat()" class="mt-2.5 w-full bg-wa-green hover:bg-emerald-400 text-wa-tealDark py-1.5 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 shadow transition">
+        <button onclick="joinMultiPartyMeetingRoom('${roomId}')" class="mt-2.5 w-full bg-wa-green hover:bg-emerald-400 text-wa-tealDark py-1.5 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 shadow transition">
           <i data-lucide="video" class="w-3.5 h-3.5"></i>
           Join Video Meeting
         </button>
@@ -2074,7 +2103,8 @@ async function createMeetingRoom() {
   hideAttachmentMenu();
   if (!activeChatPeer) return;
 
-  const meetingMsg = `Meeting Room started for live property discussion. Tap to join encrypted video session.`;
+  const generatedRoomId = 'land-meet-' + Math.random().toString(36).substring(2, 7) + '-' + Date.now().toString(36).slice(-3);
+  const meetingMsg = `Meeting Room started for live property discussion. Room Code: ${generatedRoomId}`;
 
   // Optimistic UI
   const tempId = 'temp_meet_' + Date.now();
@@ -2085,6 +2115,7 @@ async function createMeetingRoom() {
     receiver_id: activeChatPeer.id,
     content: meetingMsg,
     message_type: 'meeting',
+    room_id: generatedRoomId,
     created_at: new Date().toISOString()
   };
   appendMessageToChat(optimisticMsg, true);
@@ -2104,6 +2135,7 @@ async function createMeetingRoom() {
         receiver_id: activeChatPeer.id,
         content: meetingMsg,
         message_type: 'meeting',
+        room_id: generatedRoomId,
         sender_name: currentUser ? currentUser.name : '',
         sender_avatar: currentUser ? currentUser.avatar : ''
       }));
@@ -2112,7 +2144,7 @@ async function createMeetingRoom() {
 
   // 2. HTTP persistence
   try {
-    await fetch(`${API_BASE}/api/messages`, {
+    fetch(`${API_BASE}/api/messages`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -2127,17 +2159,17 @@ async function createMeetingRoom() {
         sender_avatar: currentUser ? currentUser.avatar : ''
       })
     });
-    // Launch video call immediately
-    triggerCallFromChat('video');
   } catch (err) {
     console.error('Error creating meeting room:', err);
   }
+
+  // Launch multi-party meeting room immediately for sender
+  joinMultiPartyMeetingRoom(generatedRoomId);
 }
 
-function joinMeetingRoomFromChat() {
-  if (activeChatPeer) {
-    initiateDirectCall(activeChatPeer.id, activeChatPeer.name, activeChatPeer.avatar, activeChatPeer.role, 'video');
-  }
+function joinMeetingRoomFromChat(roomId) {
+  const targetRoom = roomId || 'land-deal-room';
+  joinMultiPartyMeetingRoom(targetRoom);
 }
 
 async function sendChatMessage() {
@@ -3185,6 +3217,645 @@ function rejectIncomingCall() {
   incomingCallData = null;
 }
 
+// ================= MULTI-PARTY VIRTUAL MEETING ROOMS =================
+
+function generateRoomId() {
+  return 'land-meet-' + Math.random().toString(36).substring(2, 7) + '-' + Date.now().toString(36).slice(-3);
+}
+
+function openCreateMeetingRoomModal() {
+  currentNewRoomId = generateRoomId();
+  const modal = document.getElementById('modal-create-meeting-room');
+  const inputLink = document.getElementById('input-meeting-share-link');
+  const searchInput = document.getElementById('invite-contact-search');
+
+  if (inputLink) {
+    inputLink.value = `${window.location.origin}/?room=${currentNewRoomId}`;
+  }
+  if (searchInput) {
+    searchInput.value = '';
+  }
+
+  renderMeetingInviteContacts();
+  if (modal) modal.classList.remove('hidden');
+  if (window.lucide) lucide.createIcons();
+}
+
+function closeCreateMeetingRoomModal() {
+  const modal = document.getElementById('modal-create-meeting-room');
+  if (modal) modal.classList.add('hidden');
+}
+
+function renderMeetingInviteContacts(filter = '') {
+  const listEl = document.getElementById('meeting-invite-contacts-list');
+  if (!listEl) return;
+
+  const currentUid = currentUser ? Number(currentUser.id) : 0;
+  const filteredUsers = allUsers.filter(u => {
+    if (Number(u.id) === currentUid) return false;
+    if (!filter) return true;
+    const q = filter.toLowerCase();
+    return (u.name && u.name.toLowerCase().includes(q)) || 
+           (u.role && u.role.toLowerCase().includes(q)) ||
+           (u.email && u.email.toLowerCase().includes(q));
+  });
+
+  if (filteredUsers.length === 0) {
+    listEl.innerHTML = `<div class="p-4 text-center text-slate-400 text-xs">No contacts found</div>`;
+    return;
+  }
+
+  listEl.innerHTML = filteredUsers.map(u => {
+    const avatar = u.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(u.name)}&background=075E54&color=fff`;
+    const roleColors = {
+      buyer: 'bg-blue-100 text-blue-700 border-blue-200',
+      seller: 'bg-emerald-100 text-emerald-800 border-emerald-200',
+      broker: 'bg-purple-100 text-purple-800 border-purple-200'
+    };
+    const roleBadge = roleColors[u.role?.toLowerCase()] || 'bg-slate-100 text-slate-700 border-slate-200';
+
+    return `
+      <div class="p-2.5 flex items-center justify-between hover:bg-white transition">
+        <div class="flex items-center gap-2.5 min-w-0">
+          <img src="${avatar}" class="w-8 h-8 rounded-full object-cover border border-slate-200 shrink-0">
+          <div class="min-w-0">
+            <h4 class="font-bold text-xs text-slate-800 truncate">${u.name}</h4>
+            <span class="text-[9px] px-1.5 py-0.2 rounded border font-semibold uppercase ${roleBadge}">${u.role || 'Member'}</span>
+          </div>
+        </div>
+        <button id="btn-invite-user-${u.id}" onclick="sendMeetingInviteToUser(${u.id})" class="bg-wa-teal hover:bg-wa-tealDark text-white px-2.5 py-1 rounded-lg font-bold text-xs flex items-center gap-1 transition shadow-sm shrink-0">
+          <i data-lucide="send" class="w-3 h-3"></i>
+          <span>Invite</span>
+        </button>
+      </div>
+    `;
+  }).join('');
+
+  if (window.lucide) lucide.createIcons();
+}
+
+function filterMeetingInviteContacts() {
+  const searchInput = document.getElementById('invite-contact-search');
+  renderMeetingInviteContacts(searchInput ? searchInput.value.trim() : '');
+}
+
+async function sendMeetingInviteToUser(targetUserId) {
+  const targetUser = allUsers.find(u => Number(u.id) === Number(targetUserId));
+  if (!targetUser || !currentUser) return;
+  const roomId = currentNewRoomId || currentMeetingRoomId;
+  if (!roomId) return;
+
+  const meetingMsg = `Virtual Meeting Room invitation for property discussion. Room Code: ${roomId}`;
+  const tempId = 'temp_meet_inv_' + Date.now();
+
+  const optimisticMsg = {
+    id: tempId,
+    tempId: tempId,
+    sender_id: currentUser.id,
+    receiver_id: targetUser.id,
+    content: meetingMsg,
+    message_type: 'meeting',
+    room_id: roomId,
+    created_at: new Date().toISOString()
+  };
+
+  const targetId = Number(targetUser.id);
+  if (!chatMessagesCache.has(targetId)) {
+    chatMessagesCache.set(targetId, []);
+  }
+  chatMessagesCache.get(targetId).push(optimisticMsg);
+
+  // Send over WebSocket immediately (0ms)
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    try {
+      ws.send(JSON.stringify({
+        type: 'chat_message',
+        tempId: tempId,
+        receiver_id: targetUser.id,
+        content: meetingMsg,
+        message_type: 'meeting',
+        room_id: roomId,
+        sender_name: currentUser.name,
+        sender_avatar: currentUser.avatar
+      }));
+    } catch(e) {}
+  }
+
+  // Persist over HTTP
+  try {
+    fetch(`${API_BASE}/api/messages`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${currentToken}`
+      },
+      body: JSON.stringify({
+        tempId: tempId,
+        receiver_id: targetUser.id,
+        content: meetingMsg,
+        message_type: 'meeting',
+        sender_name: currentUser.name,
+        sender_avatar: currentUser.avatar
+      })
+    });
+  } catch (e) {}
+
+  // Update button UI
+  const btn = document.getElementById(`btn-invite-user-${targetUser.id}`);
+  if (btn) {
+    btn.disabled = true;
+    btn.className = 'text-emerald-700 bg-emerald-100 border border-emerald-300 font-bold text-xs px-2.5 py-1 rounded-lg flex items-center gap-1 cursor-default';
+    btn.innerHTML = '<i data-lucide="check" class="w-3 h-3 text-emerald-700"></i> Invited';
+    if (window.lucide) lucide.createIcons();
+  }
+
+  showToast(`Meeting invitation sent to ${targetUser.name}!`, 'success');
+}
+
+function copyMeetingShareLink() {
+  const input = document.getElementById('input-meeting-share-link');
+  if (!input) return;
+  navigator.clipboard.writeText(input.value).then(() => {
+    const textEl = document.getElementById('copy-modal-link-text');
+    if (textEl) {
+      textEl.textContent = 'Copied!';
+      setTimeout(() => { if (textEl) textEl.textContent = 'Copy'; }, 2000);
+    }
+    showToast('Meeting link copied to clipboard!', 'success');
+  }).catch(() => {
+    input.select();
+    document.execCommand('copy');
+    showToast('Meeting link copied!', 'success');
+  });
+}
+
+function copyMeetingLink() {
+  const url = `${window.location.origin}/?room=${encodeURIComponent(currentMeetingRoomId || 'room')}`;
+  navigator.clipboard.writeText(url).then(() => {
+    const textEl = document.getElementById('copy-meeting-link-text');
+    if (textEl) {
+      textEl.textContent = 'Copied!';
+      setTimeout(() => { if (textEl) textEl.textContent = 'Copy Link'; }, 2000);
+    }
+    showToast('Meeting link copied to clipboard!', 'success');
+  }).catch(() => {
+    showToast('Meeting link copied!', 'success');
+  });
+}
+
+function openJoinMeetingModal() {
+  const modal = document.getElementById('modal-join-meeting-room');
+  const input = document.getElementById('input-join-meeting-code');
+  if (input) input.value = '';
+  if (modal) modal.classList.remove('hidden');
+}
+
+function closeJoinMeetingModal() {
+  const modal = document.getElementById('modal-join-meeting-room');
+  if (modal) modal.classList.add('hidden');
+}
+
+function submitJoinMeetingCode() {
+  const input = document.getElementById('input-join-meeting-code');
+  if (!input || !input.value.trim()) {
+    showToast('Please enter a meeting code or link', 'error');
+    return;
+  }
+  let code = input.value.trim();
+  const match = code.match(/room=([a-zA-Z0-9_\-]+)/i);
+  if (match) {
+    code = match[1];
+  }
+  closeJoinMeetingModal();
+  joinMultiPartyMeetingRoom(code);
+}
+
+function joinCreatedMeetingRoom() {
+  const roomId = currentNewRoomId || generateRoomId();
+  closeCreateMeetingRoomModal();
+  joinMultiPartyMeetingRoom(roomId);
+}
+
+function openMeetingInviteDrawer() {
+  currentNewRoomId = currentMeetingRoomId;
+  const modal = document.getElementById('modal-create-meeting-room');
+  const inputLink = document.getElementById('input-meeting-share-link');
+  if (inputLink) {
+    inputLink.value = `${window.location.origin}/?room=${encodeURIComponent(currentMeetingRoomId)}`;
+  }
+  renderMeetingInviteContacts();
+  if (modal) modal.classList.remove('hidden');
+  if (window.lucide) lucide.createIcons();
+}
+
+async function joinMultiPartyMeetingRoom(roomId) {
+  if (!roomId) return;
+  if (!currentUser) {
+    pendingUrlRoomId = roomId;
+    showToast('Please sign in or select a demo role to join the meeting room.', 'info');
+    return;
+  }
+
+  // End any 1-on-1 call if active
+  if (peerConnection) {
+    cleanupCall();
+  }
+
+  currentMeetingRoomId = roomId;
+  const modal = document.getElementById('meeting-room-modal');
+  const roomBadge = document.getElementById('meeting-room-badge');
+  const localName = document.getElementById('meeting-local-name');
+  const localRole = document.getElementById('meeting-local-role');
+  const localAvatar = document.getElementById('meeting-local-avatar');
+
+  if (roomBadge) roomBadge.textContent = roomId;
+  if (localName) localName.textContent = currentUser.name || 'You';
+  if (localRole) localRole.textContent = (currentUser.role || 'Buyer').toUpperCase();
+  if (localAvatar) localAvatar.src = currentUser.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(currentUser.name)}&background=075E54&color=fff`;
+
+  // Update address bar query without reload
+  try {
+    const newUrl = `${window.location.pathname}?room=${encodeURIComponent(roomId)}`;
+    window.history.replaceState({ roomId: roomId }, '', newUrl);
+  } catch(e) {}
+
+  if (modal) modal.classList.remove('hidden');
+
+  // Request Camera & Microphone
+  try {
+    meetingLocalStream = await navigator.mediaDevices.getUserMedia({
+      video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: 'user' },
+      audio: { echoCancellation: true, noiseSuppression: true }
+    });
+  } catch (err) {
+    console.warn('Meeting room media warning:', err);
+    try {
+      meetingLocalStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch(err2) {
+      meetingLocalStream = new MediaStream();
+    }
+  }
+
+  const localVideo = document.getElementById('meeting-local-video');
+  if (localVideo) {
+    localVideo.srcObject = meetingLocalStream;
+  }
+
+  isMeetingAudioMuted = false;
+  isMeetingVideoMuted = false;
+  updateMeetingControlsUI();
+  updateMeetingParticipantCount();
+  adjustMeetingGridCols();
+
+  // Announce to WebSocket server
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({
+      type: 'join_meeting_room',
+      roomId: roomId,
+      userInfo: {
+        id: currentUser.id,
+        name: currentUser.name,
+        avatar: currentUser.avatar,
+        role: currentUser.role
+      }
+    }));
+  }
+
+  showToast(`Joined Virtual Meeting Room: ${roomId}`, 'success');
+  if (window.lucide) lucide.createIcons();
+}
+
+function leaveMeetingRoom() {
+  if (currentMeetingRoomId && ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({
+      type: 'leave_meeting_room',
+      roomId: currentMeetingRoomId
+    }));
+  }
+
+  if (meetingLocalStream) {
+    meetingLocalStream.getTracks().forEach(t => t.stop());
+    meetingLocalStream = null;
+  }
+  stopMeetingScreenShare();
+
+  // Close all peer connections
+  meetingPeerConnections.forEach((pc) => {
+    try { pc.close(); } catch(e){}
+  });
+  meetingPeerConnections.clear();
+  meetingPeerStreams.clear();
+  meetingPeerInfo.clear();
+  meetingPendingIce.clear();
+
+  // Remove remote tiles
+  const grid = document.getElementById('meeting-video-grid');
+  if (grid) {
+    const remoteTiles = grid.querySelectorAll('.meeting-peer-tile');
+    remoteTiles.forEach(el => el.remove());
+  }
+
+  const modal = document.getElementById('meeting-room-modal');
+  if (modal) modal.classList.add('hidden');
+
+  // Clear query string from URL
+  try {
+    window.history.replaceState({}, '', window.location.pathname);
+  } catch(e) {}
+
+  currentMeetingRoomId = null;
+  showToast('You left the meeting room.', 'info');
+}
+
+function createMeetingPeerConnection(peerId) {
+  if (meetingPeerConnections.has(peerId)) {
+    return meetingPeerConnections.get(peerId);
+  }
+
+  const pc = new RTCPeerConnection(rtcConfig);
+  meetingPeerConnections.set(peerId, pc);
+  if (!meetingPendingIce.has(peerId)) {
+    meetingPendingIce.set(peerId, []);
+  }
+
+  pc.onicecandidate = (event) => {
+    if (event.candidate && ws && ws.readyState === WebSocket.OPEN && currentMeetingRoomId) {
+      ws.send(JSON.stringify({
+        type: 'meeting_ice_candidate',
+        roomId: currentMeetingRoomId,
+        targetUserId: peerId,
+        candidate: event.candidate
+      }));
+    }
+  };
+
+  pc.ontrack = (event) => {
+    const stream = event.streams[0];
+    meetingPeerStreams.set(peerId, stream);
+    const videoEl = document.getElementById(`meeting-video-${peerId}`);
+    if (videoEl) {
+      videoEl.srcObject = stream;
+    }
+    const audioEl = document.getElementById(`meeting-audio-${peerId}`);
+    if (audioEl) {
+      audioEl.srcObject = stream;
+    }
+    const fallback = document.getElementById(`meeting-avatar-fallback-${peerId}`);
+    if (fallback) {
+      fallback.classList.add('hidden');
+    }
+  };
+
+  pc.onconnectionstatechange = () => {
+    console.log(`Meeting peer connection ${peerId} state:`, pc.connectionState);
+  };
+
+  return pc;
+}
+
+async function drainMeetingPendingIce(peerId) {
+  const pc = meetingPeerConnections.get(peerId);
+  if (!pc || !pc.remoteDescription) return;
+  const queue = meetingPendingIce.get(peerId) || [];
+  while (queue.length > 0) {
+    const cand = queue.shift();
+    try {
+      await pc.addIceCandidate(new RTCIceCandidate(cand));
+    } catch(e) {
+      console.warn('Queued meeting ICE candidate error:', e);
+    }
+  }
+}
+
+function renderMeetingPeerTile(peerId, info) {
+  const grid = document.getElementById('meeting-video-grid');
+  if (!grid) return;
+
+  let tile = document.getElementById(`meeting-tile-${peerId}`);
+  if (tile) return; // already in DOM
+
+  tile = document.createElement('div');
+  tile.id = `meeting-tile-${peerId}`;
+  tile.className = 'meeting-peer-tile relative bg-slate-800 rounded-2xl overflow-hidden border border-white/10 shadow-lg flex items-center justify-center min-h-[180px] max-h-[50vh] transition-all duration-300';
+
+  const avatarUrl = info.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(info.name || 'User')}&background=075E54&color=fff`;
+  const roleName = (info.role || 'Member').toUpperCase();
+
+  tile.innerHTML = `
+    <video id="meeting-video-${peerId}" autoplay playsinline class="w-full h-full object-cover"></video>
+    <audio id="meeting-audio-${peerId}" autoplay></audio>
+    
+    <div id="meeting-avatar-fallback-${peerId}" class="absolute inset-0 bg-slate-800 flex flex-col items-center justify-center">
+      <img src="${avatarUrl}" class="w-16 h-16 rounded-full border-2 border-emerald-400 object-cover shadow-lg mb-1.5 animate-pulse">
+      <span class="text-xs text-slate-300 font-semibold">${info.name || 'Participant'}</span>
+      <span class="text-[10px] text-emerald-400">Connecting video...</span>
+    </div>
+
+    <!-- Bottom Left Badge -->
+    <div class="absolute bottom-2 left-2 bg-black/60 backdrop-blur-md px-2.5 py-1 rounded-lg text-xs font-semibold flex items-center gap-1.5 border border-white/10 text-white">
+      <span>${info.name || 'Participant'}</span>
+      <span class="text-[9px] px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 uppercase font-bold">${roleName}</span>
+    </div>
+
+    <!-- Top Right Mic Status -->
+    <div class="absolute top-2 right-2 p-1 rounded-full bg-black/60 text-emerald-400">
+      <i data-lucide="mic" class="w-3 h-3"></i>
+    </div>
+  `;
+
+  grid.appendChild(tile);
+  updateMeetingParticipantCount();
+  adjustMeetingGridCols();
+  if (window.lucide) lucide.createIcons();
+}
+
+function removeMeetingPeer(peerId) {
+  const pc = meetingPeerConnections.get(peerId);
+  if (pc) {
+    try { pc.close(); } catch(e){}
+    meetingPeerConnections.delete(peerId);
+  }
+  meetingPeerStreams.delete(peerId);
+  meetingPendingIce.delete(peerId);
+  meetingPeerInfo.delete(peerId);
+
+  const tile = document.getElementById(`meeting-tile-${peerId}`);
+  if (tile) tile.remove();
+
+  updateMeetingParticipantCount();
+  adjustMeetingGridCols();
+}
+
+function updateMeetingParticipantCount() {
+  const count = 1 + meetingPeerConnections.size;
+  const countEl = document.getElementById('meeting-participant-count');
+  const banner = document.getElementById('meeting-waiting-banner');
+
+  if (countEl) {
+    countEl.textContent = `${count} participant${count > 1 ? 's' : ''} connected`;
+  }
+  if (banner) {
+    if (count > 1) {
+      banner.classList.add('hidden');
+    } else {
+      banner.classList.remove('hidden');
+    }
+  }
+}
+
+function adjustMeetingGridCols() {
+  const grid = document.getElementById('meeting-video-grid');
+  if (!grid) return;
+  const count = 1 + meetingPeerConnections.size;
+  grid.classList.remove('grid-cols-1', 'grid-cols-2', 'grid-cols-3', 'md:grid-cols-2');
+
+  if (count <= 1) {
+    grid.classList.add('grid-cols-1');
+  } else if (count === 2) {
+    grid.classList.add('grid-cols-1', 'md:grid-cols-2');
+  } else {
+    grid.classList.add('grid-cols-2');
+  }
+}
+
+function toggleMeetingMic() {
+  if (!meetingLocalStream) return;
+  const audioTracks = meetingLocalStream.getAudioTracks();
+  if (audioTracks.length === 0) return;
+  isMeetingAudioMuted = !isMeetingAudioMuted;
+  audioTracks.forEach(t => t.enabled = !isMeetingAudioMuted);
+  updateMeetingControlsUI();
+}
+
+function toggleMeetingCam() {
+  if (!meetingLocalStream) return;
+  const videoTracks = meetingLocalStream.getVideoTracks();
+  if (videoTracks.length === 0) return;
+  isMeetingVideoMuted = !isMeetingVideoMuted;
+  videoTracks.forEach(t => t.enabled = !isMeetingVideoMuted);
+
+  const fallback = document.getElementById('meeting-local-avatar-fallback');
+  if (fallback) {
+    if (isMeetingVideoMuted) {
+      fallback.classList.remove('hidden');
+    } else {
+      fallback.classList.add('hidden');
+    }
+  }
+  updateMeetingControlsUI();
+}
+
+function updateMeetingControlsUI() {
+  const btnMic = document.getElementById('btn-meeting-mic');
+  const iconMic = document.getElementById('meeting-icon-mic');
+  const localMicBadge = document.getElementById('meeting-local-mic-badge');
+
+  if (btnMic && iconMic) {
+    if (isMeetingAudioMuted) {
+      btnMic.className = 'p-3 rounded-full bg-rose-600 hover:bg-rose-700 text-white transition';
+      iconMic.setAttribute('data-lucide', 'mic-off');
+      if (localMicBadge) {
+        localMicBadge.className = 'absolute top-2 right-2 p-1 rounded-full bg-rose-600 text-white';
+        localMicBadge.innerHTML = '<i data-lucide="mic-off" class="w-3 h-3"></i>';
+      }
+    } else {
+      btnMic.className = 'p-3 rounded-full bg-white/10 hover:bg-white/20 text-white transition';
+      iconMic.setAttribute('data-lucide', 'mic');
+      if (localMicBadge) {
+        localMicBadge.className = 'absolute top-2 right-2 p-1 rounded-full bg-black/60 text-emerald-400';
+        localMicBadge.innerHTML = '<i data-lucide="mic" class="w-3 h-3"></i>';
+      }
+    }
+  }
+
+  const btnCam = document.getElementById('btn-meeting-cam');
+  const iconCam = document.getElementById('meeting-icon-cam');
+  if (btnCam && iconCam) {
+    if (isMeetingVideoMuted) {
+      btnCam.className = 'p-3 rounded-full bg-rose-600 hover:bg-rose-700 text-white transition';
+      iconCam.setAttribute('data-lucide', 'video-off');
+    } else {
+      btnCam.className = 'p-3 rounded-full bg-white/10 hover:bg-white/20 text-white transition';
+      iconCam.setAttribute('data-lucide', 'video');
+    }
+  }
+
+  if (window.lucide) lucide.createIcons();
+}
+
+async function toggleMeetingScreenShare() {
+  const btn = document.getElementById('btn-meeting-screen');
+  if (!isMeetingScreenSharing) {
+    try {
+      meetingScreenStream = await navigator.mediaDevices.getDisplayMedia({ video: true });
+      const screenTrack = meetingScreenStream.getVideoTracks()[0];
+
+      // Update local preview
+      const localVideo = document.getElementById('meeting-local-video');
+      if (localVideo) localVideo.srcObject = meetingScreenStream;
+
+      // Replace track for all connected peers in mesh
+      meetingPeerConnections.forEach((pc) => {
+        const sender = pc.getSenders().find(s => s.track && s.track.kind === 'video');
+        if (sender) sender.replaceTrack(screenTrack);
+      });
+
+      screenTrack.onended = () => {
+        stopMeetingScreenShare();
+      };
+
+      isMeetingScreenSharing = true;
+      if (btn) btn.className = 'p-3 rounded-full bg-emerald-600 text-white transition';
+      showToast('Screen sharing started with meeting room participants', 'info');
+    } catch(err) {
+      console.warn('Screen share canceled or error:', err);
+    }
+  } else {
+    stopMeetingScreenShare();
+  }
+}
+
+function stopMeetingScreenShare() {
+  if (!isMeetingScreenSharing) return;
+  if (meetingScreenStream) {
+    meetingScreenStream.getTracks().forEach(t => t.stop());
+    meetingScreenStream = null;
+  }
+  if (meetingLocalStream) {
+    const videoTrack = meetingLocalStream.getVideoTracks()[0];
+    if (videoTrack) {
+      meetingPeerConnections.forEach((pc) => {
+        const sender = pc.getSenders().find(s => s.track && s.track.kind === 'video');
+        if (sender) sender.replaceTrack(videoTrack);
+      });
+      const localVideo = document.getElementById('meeting-local-video');
+      if (localVideo) localVideo.srcObject = meetingLocalStream;
+    }
+  }
+  isMeetingScreenSharing = false;
+  const btn = document.getElementById('btn-meeting-screen');
+  if (btn) btn.className = 'p-3 rounded-full bg-white/10 hover:bg-white/20 text-white transition';
+  showToast('Screen sharing stopped', 'info');
+}
+
+function checkUrlForMeetingRoom() {
+  try {
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.has('room')) {
+      const roomId = urlParams.get('room');
+      if (roomId) {
+        if (currentToken && currentUser) {
+          setTimeout(() => {
+            joinMultiPartyMeetingRoom(roomId);
+          }, 600);
+        } else {
+          pendingUrlRoomId = roomId;
+        }
+      }
+    }
+  } catch(e) {}
+}
+
 // ================= WEBSOCKET REAL-TIME SIGNALING =================
 
 let wsHeartbeatInterval = null;
@@ -3396,6 +4067,117 @@ function initWebSocket() {
               }
             } else {
               pendingIceCandidates.push(data.candidate);
+            }
+          }
+          break;
+
+        // --- Multi-Party Meeting Room Events ---
+        case 'meeting_room_joined':
+          console.log('Joined meeting room:', data.roomId, 'Existing peers:', data.participants);
+          updateMeetingParticipantCount();
+          if (Array.isArray(data.participants)) {
+            for (const peer of data.participants) {
+              meetingPeerInfo.set(peer.id, peer);
+              renderMeetingPeerTile(peer.id, peer);
+              const pc = createMeetingPeerConnection(peer.id);
+              if (meetingLocalStream) {
+                meetingLocalStream.getTracks().forEach(t => pc.addTrack(t, meetingLocalStream));
+              }
+              try {
+                const offer = await pc.createOffer();
+                await pc.setLocalDescription(offer);
+                ws.send(JSON.stringify({
+                  type: 'meeting_offer',
+                  roomId: currentMeetingRoomId,
+                  targetUserId: peer.id,
+                  offer: offer,
+                  senderInfo: {
+                    id: currentUser.id,
+                    name: currentUser.name,
+                    avatar: currentUser.avatar,
+                    role: currentUser.role
+                  }
+                }));
+              } catch (e) {
+                console.error('Error creating meeting offer to peer', peer.id, e);
+              }
+            }
+          }
+          break;
+
+        case 'meeting_peer_joined':
+          if (data.peer && data.peer.id !== currentUser.id) {
+            console.log('New peer joined meeting room:', data.peer);
+            meetingPeerInfo.set(data.peer.id, data.peer);
+            renderMeetingPeerTile(data.peer.id, data.peer);
+            showToast(`${data.peer.name || 'A user'} joined the meeting room`, 'info');
+          }
+          break;
+
+        case 'meeting_peer_left':
+          if (data.peerId) {
+            const peer = meetingPeerInfo.get(data.peerId);
+            const peerName = peer ? peer.name : 'Participant';
+            removeMeetingPeer(data.peerId);
+            showToast(`${peerName} left the meeting`, 'info');
+          }
+          break;
+
+        case 'meeting_offer':
+          if (data.senderId && data.offer) {
+            if (data.senderInfo) {
+              meetingPeerInfo.set(data.senderId, data.senderInfo);
+              renderMeetingPeerTile(data.senderId, data.senderInfo);
+            }
+            const pc = createMeetingPeerConnection(data.senderId);
+            if (meetingLocalStream && pc.getSenders().length === 0) {
+              meetingLocalStream.getTracks().forEach(t => pc.addTrack(t, meetingLocalStream));
+            }
+            try {
+              await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
+              await drainMeetingPendingIce(data.senderId);
+              const answer = await pc.createAnswer();
+              await pc.setLocalDescription(answer);
+              ws.send(JSON.stringify({
+                type: 'meeting_answer',
+                roomId: currentMeetingRoomId || data.roomId,
+                targetUserId: data.senderId,
+                answer: answer
+              }));
+            } catch (err) {
+              console.error('Error handling meeting offer from', data.senderId, err);
+            }
+          }
+          break;
+
+        case 'meeting_answer':
+          if (data.senderId && data.answer) {
+            const pc = meetingPeerConnections.get(data.senderId);
+            if (pc) {
+              try {
+                await pc.setRemoteDescription(new RTCSessionDescription(data.answer));
+                await drainMeetingPendingIce(data.senderId);
+              } catch (err) {
+                console.error('Error setting meeting answer from', data.senderId, err);
+              }
+            }
+          }
+          break;
+
+        case 'meeting_ice_candidate':
+          if (data.senderId && data.candidate) {
+            const pc = meetingPeerConnections.get(data.senderId);
+            if (pc && pc.remoteDescription && pc.remoteDescription.type) {
+              try {
+                await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
+              } catch (e) {
+                console.error('Error applying meeting candidate:', e);
+              }
+            } else {
+              if (!meetingPendingIce.has(data.senderId)) {
+                meetingPendingIce.set(data.senderId, []);
+              }
+              meetingPendingIce.get(data.senderId).push(data.candidate);
             }
           }
           break;

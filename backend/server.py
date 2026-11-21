@@ -733,7 +733,11 @@ async def api_call_logs(request):
     logs = await asyncio.to_thread(fetch_logs)
     return JSONResponse(logs)
 
-# --- Real-Time WebSocket for Signaling (Audio / Video Calls & Live Chat) ---
+# --- Real-Time WebSocket for Signaling (Audio / Video Calls, Meeting Rooms & Live Chat) ---
+
+# Active multi-participant meeting rooms:
+# room_id -> { "id": str, "created_by": int, "participants": { user_id: { "id": int, "name": str, "avatar": str, "role": str } } }
+active_meeting_rooms: Dict[str, Dict[str, Any]] = {}
 
 async def websocket_signaling(websocket: WebSocket):
     await websocket.accept()
@@ -879,12 +883,91 @@ async def websocket_signaling(websocket: WebSocket):
                     data["senderId"] = authenticated_user_id
                     await send_to_user(target_id, data)
 
+            # --- Multi-Party Meeting Room Signaling ---
+            elif msg_type == "join_meeting_room":
+                if not authenticated_user_id:
+                    continue
+                room_id = data.get("roomId", "").strip()
+                if not room_id:
+                    continue
+                user_info = data.get("userInfo") or {}
+
+                if room_id not in active_meeting_rooms:
+                    active_meeting_rooms[room_id] = {
+                        "id": room_id,
+                        "created_by": authenticated_user_id,
+                        "participants": {}
+                    }
+
+                room = active_meeting_rooms[room_id]
+                existing_peers = [p for uid, p in room["participants"].items() if uid != authenticated_user_id]
+
+                user_entry = {
+                    "id": authenticated_user_id,
+                    "name": user_info.get("name") or f"User #{authenticated_user_id}",
+                    "avatar": user_info.get("avatar") or "",
+                    "role": user_info.get("role") or "Member"
+                }
+                room["participants"][authenticated_user_id] = user_entry
+
+                # 1. Send confirmation and existing peers to newly joined participant
+                await websocket.send_text(json.dumps({
+                    "type": "meeting_room_joined",
+                    "roomId": room_id,
+                    "participants": existing_peers,
+                    "self": user_entry
+                }))
+
+                # 2. Announce to all existing peers in this room
+                for peer in existing_peers:
+                    await send_to_user(peer["id"], {
+                        "type": "meeting_peer_joined",
+                        "roomId": room_id,
+                        "peer": user_entry
+                    })
+
+            elif msg_type == "leave_meeting_room":
+                if not authenticated_user_id:
+                    continue
+                room_id = data.get("roomId", "").strip()
+                if room_id in active_meeting_rooms:
+                    room = active_meeting_rooms[room_id]
+                    if authenticated_user_id in room["participants"]:
+                        del room["participants"][authenticated_user_id]
+                        for uid in list(room["participants"].keys()):
+                            await send_to_user(uid, {
+                                "type": "meeting_peer_left",
+                                "roomId": room_id,
+                                "peerId": authenticated_user_id
+                            })
+                        if not room["participants"]:
+                            del active_meeting_rooms[room_id]
+
+            elif msg_type in ("meeting_offer", "meeting_answer", "meeting_ice_candidate"):
+                target_id = data.get("targetUserId")
+                if target_id and authenticated_user_id:
+                    data["senderId"] = authenticated_user_id
+                    await send_to_user(target_id, data)
+
     except (WebSocketDisconnect, Exception):
         if authenticated_user_id:
             await unregister_ws(authenticated_user_id, websocket)
             u_id = int(authenticated_user_id)
             if u_id not in active_connections or not active_connections[u_id]:
                 await broadcast_user_status(u_id, "offline")
+
+            # Clean up user from active meeting rooms
+            for r_id, r_info in list(active_meeting_rooms.items()):
+                if u_id in r_info.get("participants", {}):
+                    del r_info["participants"][u_id]
+                    for remaining_uid in list(r_info["participants"].keys()):
+                        await send_to_user(remaining_uid, {
+                            "type": "meeting_peer_left",
+                            "roomId": r_id,
+                            "peerId": u_id
+                        })
+                    if not r_info["participants"]:
+                        del active_meeting_rooms[r_id]
 
 # --- Static Frontend Serving ---
 
