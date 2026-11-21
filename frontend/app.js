@@ -33,6 +33,7 @@ let onlineUserIds = new Set();
 let peerTypingMap = new Map(); // peerId -> timeoutId
 let myTypingTimeout = null;
 let isCurrentlyTypingSent = false;
+let chatMessagesCache = new Map(); // userId -> messages array
 
 // --- WebRTC State ---
 let peerConnection = null;
@@ -1669,15 +1670,46 @@ function updateChatPeerStatusUI() {
 let chatSyncInterval = null;
 
 async function startChatWithUser(userId, name, avatar, role) {
-  activeChatPeer = { id: userId, name, avatar, role };
+  const targetId = Number(userId);
+  activeChatPeer = { id: targetId, name, avatar, role };
 
   const peerName = document.getElementById('chat-peer-name');
   const peerAvatar = document.getElementById('chat-peer-avatar');
   const peerRole = document.getElementById('chat-peer-role');
+  const countEl = document.getElementById('chat-peer-msg-count');
+  const messagesContainer = document.getElementById('chat-messages-container');
+
   if (peerName) peerName.textContent = name;
   if (peerAvatar) peerAvatar.src = avatar;
   if (peerRole) peerRole.textContent = role;
   updateChatPeerStatusUI();
+
+  // Instant render: if cached, show immediately with 0ms delay; otherwise show clean encrypted state
+  if (chatMessagesCache.has(targetId)) {
+    const cached = chatMessagesCache.get(targetId);
+    renderChatMessages(cached);
+    if (countEl) {
+      countEl.textContent = `${cached.length} ${cached.length === 1 ? 'message' : 'messages'}`;
+    }
+  } else {
+    if (messagesContainer) {
+      messagesContainer.innerHTML = `
+        <div class="text-center py-8 text-slate-400 text-xs">
+          <div class="inline-block bg-white/70 backdrop-blur-sm px-3.5 py-1.5 rounded-xl shadow-xs text-slate-500 font-medium">
+            🔒 Messages and calls are end-to-end encrypted within LandConnect.
+          </div>
+          <div class="flex items-center justify-center gap-1.5 mt-4 text-emerald-600">
+            <span class="w-2 h-2 rounded-full bg-wa-teal animate-bounce"></span>
+            <span class="w-2 h-2 rounded-full bg-wa-teal animate-bounce [animation-delay:0.15s]"></span>
+            <span class="w-2 h-2 rounded-full bg-wa-teal animate-bounce [animation-delay:0.3s]"></span>
+          </div>
+        </div>
+      `;
+    }
+    if (countEl) {
+      countEl.textContent = '...';
+    }
+  }
 
   const chatView = document.getElementById('active-chat-view');
   if (chatView) chatView.classList.remove('hidden');
@@ -1685,14 +1717,14 @@ async function startChatWithUser(userId, name, avatar, role) {
   updateHeaderPinArchiveButtons();
 
   // Mark this conversation's unread count as 0 locally
-  const conv = recentConversations.find(c => Number(c.peer_id) === Number(userId));
+  const conv = recentConversations.find(c => Number(c.peer_id) === targetId);
   if (conv) {
     conv.unread_count = 0;
     updateUnreadBadgesCounter();
     renderContactsList();
   }
 
-  await fetchChatMessages(userId);
+  await fetchChatMessages(targetId);
   switchTab('chats');
   if (window.lucide) lucide.createIcons();
 
@@ -1700,11 +1732,11 @@ async function startChatWithUser(userId, name, avatar, role) {
   clearInterval(chatSyncInterval);
   let pollCounter = 0;
   chatSyncInterval = setInterval(() => {
-    if (activeChatPeer && Number(activeChatPeer.id) === Number(userId) && currentToken) {
+    if (activeChatPeer && Number(activeChatPeer.id) === targetId && currentToken) {
       pollCounter++;
       const isWsLive = ws && ws.readyState === WebSocket.OPEN;
       if (!isWsLive || pollCounter % 5 === 0) {
-        syncChatMessages(userId);
+        syncChatMessages(targetId);
       }
     }
   }, 3000);
@@ -1716,26 +1748,38 @@ function closeActiveChat() {
   chatSyncInterval = null;
   const chatView = document.getElementById('active-chat-view');
   if (chatView) chatView.classList.add('hidden');
+  const messagesContainer = document.getElementById('chat-messages-container');
+  if (messagesContainer) messagesContainer.innerHTML = '';
   activeChatPeer = null;
   loadUsersList();
 }
 
 async function fetchChatMessages(otherUserId) {
   if (!currentToken) return;
+  const targetId = Number(otherUserId);
   try {
-    const res = await fetch(`${API_BASE}/api/messages/${otherUserId}`, {
+    const res = await fetch(`${API_BASE}/api/messages/${targetId}`, {
       headers: { 'Authorization': `Bearer ${currentToken}` }
     });
+    if (!res.ok) return;
     const messages = await res.json();
-    renderChatMessages(messages);
+    if (!Array.isArray(messages)) return;
 
-    const countEl = document.getElementById('chat-peer-msg-count');
-    if (countEl) {
-      countEl.textContent = `${messages.length} ${messages.length === 1 ? 'message' : 'messages'}`;
+    // Cache the messages for instant zero-latency retrieval
+    chatMessagesCache.set(targetId, messages);
+
+    // Only render if user is still actively looking at this conversation
+    if (activeChatPeer && Number(activeChatPeer.id) === targetId) {
+      renderChatMessages(messages);
+
+      const countEl = document.getElementById('chat-peer-msg-count');
+      if (countEl) {
+        countEl.textContent = `${messages.length} ${messages.length === 1 ? 'message' : 'messages'}`;
+      }
+      updateChatPeerStatusUI();
     }
-    updateChatPeerStatusUI();
 
-    const conv = recentConversations.find(c => Number(c.peer_id) === Number(otherUserId));
+    const conv = recentConversations.find(c => Number(c.peer_id) === targetId);
     if (conv) {
       conv.unread_count = 0;
       updateUnreadBadgesCounter();
@@ -1957,6 +2001,12 @@ async function attachListingInChat() {
   };
   appendMessageToChat(optimisticMsg, true);
 
+  const targetPeerId = Number(activeChatPeer.id);
+  if (!chatMessagesCache.has(targetPeerId)) {
+    chatMessagesCache.set(targetPeerId, []);
+  }
+  chatMessagesCache.get(targetPeerId).push(optimisticMsg);
+
   // 1. Instant WebSocket dispatch
   if (ws && ws.readyState === WebSocket.OPEN) {
     try {
@@ -2025,6 +2075,12 @@ async function createMeetingRoom() {
   };
   appendMessageToChat(optimisticMsg, true);
 
+  const targetPeerId = Number(activeChatPeer.id);
+  if (!chatMessagesCache.has(targetPeerId)) {
+    chatMessagesCache.set(targetPeerId, []);
+  }
+  chatMessagesCache.get(targetPeerId).push(optimisticMsg);
+
   // 1. Instant WebSocket dispatch
   if (ws && ws.readyState === WebSocket.OPEN) {
     try {
@@ -2090,6 +2146,12 @@ async function sendChatMessage() {
     created_at: new Date().toISOString()
   };
   appendMessageToChat(optimisticMsg, true);
+
+  const targetPeerId = Number(activeChatPeer.id);
+  if (!chatMessagesCache.has(targetPeerId)) {
+    chatMessagesCache.set(targetPeerId, []);
+  }
+  chatMessagesCache.get(targetPeerId).push(optimisticMsg);
 
   // Update in-memory recent conversation & promote to top
   const peerId = Number(activeChatPeer.id);
@@ -2328,6 +2390,12 @@ async function stopAndSendVoiceRecording() {
         created_at: new Date().toISOString()
       };
       appendMessageToChat(optimisticMsg, true);
+
+  const targetPeerId = Number(activeChatPeer.id);
+  if (!chatMessagesCache.has(targetPeerId)) {
+    chatMessagesCache.set(targetPeerId, []);
+  }
+  chatMessagesCache.get(targetPeerId).push(optimisticMsg);
 
       // 1. Instant WebSocket dispatch
       if (ws && ws.readyState === WebSocket.OPEN) {
@@ -3233,6 +3301,15 @@ function initWebSocket() {
             const idx = recentConversations.indexOf(conv);
             if (idx > -1) recentConversations.splice(idx, 1);
             recentConversations.unshift(conv);
+          }
+
+          // Keep in-memory cache synchronized
+          if (chatMessagesCache.has(peerId)) {
+            const cachedList = chatMessagesCache.get(peerId);
+            const exists = cachedList.some(m => (m.id && m.id === msg.id) || (m.tempId && m.tempId === msg.tempId));
+            if (!exists) {
+              cachedList.push(msg);
+            }
           }
 
           renderContactsList();
