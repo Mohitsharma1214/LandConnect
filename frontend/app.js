@@ -637,15 +637,19 @@ function renderListings(listings) {
 
   container.innerHTML = listings.map(item => {
     const formattedPrice = Number(item.price).toLocaleString('en-IN');
-    const firstImg = item.images && item.images.length > 0 
+    let firstImg = item.images && item.images.length > 0 
       ? item.images[0] 
       : 'https://images.unsplash.com/photo-1500382017468-9049fed747ef?w=800';
+
+    if (firstImg.includes('/uploads/land_')) {
+      firstImg = `/bucket/${firstImg.split('/uploads/')[1]}`;
+    }
 
     return `
       <div class="bg-white rounded-2xl overflow-hidden shadow-sm border border-slate-200/80 hover:shadow-md transition">
         <!-- Clickable Photo and Header (Opens Details Modal) -->
         <div onclick="openPropertyDetails(${item.id})" class="relative h-44 w-full bg-slate-100 cursor-pointer group">
-          <img src="${firstImg}" class="w-full h-full object-cover group-hover:scale-105 transition duration-300">
+          <img src="${firstImg}" onerror="this.onerror=null; this.src='https://images.unsplash.com/photo-1500382017468-9049fed747ef?w=800';" class="w-full h-full object-cover group-hover:scale-105 transition duration-300">
           <div class="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-black/20"></div>
           <div class="absolute top-3 left-3 bg-black/60 backdrop-blur-md text-white text-[10px] font-bold px-2.5 py-1 rounded-full uppercase tracking-wider">
             ${item.property_type}
@@ -1094,14 +1098,18 @@ async function loadMyListings() {
 
     listEl.innerHTML = myListings.map(item => {
       const formattedPrice = Number(item.price).toLocaleString('en-IN');
-      const firstImg = item.images && item.images.length > 0 
+      let firstImg = item.images && item.images.length > 0 
         ? item.images[0] 
         : 'https://images.unsplash.com/photo-1500382017468-9049fed747ef?w=800';
+
+      if (firstImg.includes('/uploads/land_')) {
+        firstImg = `/bucket/${firstImg.split('/uploads/')[1]}`;
+      }
 
       return `
         <div class="p-2.5 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between">
           <div class="flex items-center gap-2.5 truncate cursor-pointer" onclick="openPropertyDetails(${item.id})">
-            <img src="${firstImg}" class="w-10 h-10 rounded-lg object-cover flex-shrink-0 border border-slate-200">
+            <img src="${firstImg}" onerror="this.onerror=null; this.src='https://images.unsplash.com/photo-1500382017468-9049fed747ef?w=800';" class="w-10 h-10 rounded-lg object-cover flex-shrink-0 border border-slate-200">
             <div class="truncate">
               <h5 class="font-bold text-xs text-slate-800 truncate">${item.title}</h5>
               <div class="text-[10px] text-emerald-700 font-semibold">₹${formattedPrice} • ${item.property_type}</div>

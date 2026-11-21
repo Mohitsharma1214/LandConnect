@@ -195,7 +195,7 @@ async def api_upload_image(request):
                     client_kwargs["endpoint_url"] = AWS_ENDPOINT_URL
                 s3 = boto3.client("s3", **client_kwargs)
                 s3.upload_file(target_path, S3_BUCKET_NAME, unique_name)
-                public_url = f"{AWS_ENDPOINT_URL}/{S3_BUCKET_NAME}/{unique_name}" if AWS_ENDPOINT_URL else f"/bucket/{unique_name}"
+                public_url = f"/bucket/{unique_name}"
                 bucket_provider = f"Neon Object Storage ({S3_BUCKET_NAME})"
             except Exception as s3_err:
                 print(f"Warning: Cloud S3 bucket upload failed, using local bucket: {s3_err}")
@@ -233,7 +233,14 @@ async def api_get_listings(request):
     listings = []
     for r in rows:
         d = serialize_dict(dict(r))
-        d["images"] = json.loads(d["images"]) if isinstance(d["images"], str) else (d["images"] or [])
+        raw_imgs = json.loads(d["images"]) if isinstance(d["images"], str) else (d["images"] or [])
+        clean_imgs = []
+        for img in raw_imgs:
+            if "/uploads/land_" in img:
+                clean_imgs.append(f"/bucket/{img.split('/uploads/')[1]}")
+            else:
+                clean_imgs.append(img)
+        d["images"] = clean_imgs
         d["features"] = json.loads(d["features"]) if isinstance(d["features"], str) else (d["features"] or [])
         listings.append(d)
     cursor.close()
@@ -306,7 +313,14 @@ async def api_my_listings(request):
     listings = []
     for r in rows:
         d = serialize_dict(dict(r))
-        d["images"] = json.loads(d["images"]) if isinstance(d["images"], str) else (d["images"] or [])
+        raw_imgs = json.loads(d["images"]) if isinstance(d["images"], str) else (d["images"] or [])
+        clean_imgs = []
+        for img in raw_imgs:
+            if "/uploads/land_" in img:
+                clean_imgs.append(f"/bucket/{img.split('/uploads/')[1]}")
+            else:
+                clean_imgs.append(img)
+        d["images"] = clean_imgs
         d["features"] = json.loads(d["features"]) if isinstance(d["features"], str) else (d["features"] or [])
         listings.append(d)
     cursor.close()
