@@ -1007,14 +1007,47 @@
         </div>
       </div>
 
-      <!-- ================= FULLSCREEN AVATAR MODAL ================= -->
-      <div id="avatar-preview-modal" class="hidden fixed inset-0 bg-black/90 z-60 flex flex-col items-center justify-center p-4 backdrop-blur-sm">
-        <button onclick="closeAvatarFullscreen()" class="absolute top-4 right-4 p-2 text-white/80 hover:text-white rounded-full bg-white/10 hover:bg-white/20 transition">
-          <i data-lucide="x" class="w-6 h-6"></i>
-        </button>
-        <div class="max-w-md w-full flex flex-col items-center gap-3">
-          <img id="avatar-preview-img" src="" class="w-72 h-72 rounded-2xl object-cover shadow-2xl border-2 border-white/20">
-          <p id="avatar-preview-name" class="text-white font-bold text-base mt-2"></p>
+      <!-- ================= FULLSCREEN AVATAR MODAL (WHATSAPP PHOTO VIEWER) ================= -->
+      <div id="avatar-preview-modal" class="hidden absolute inset-0 bg-black/95 z-[80] flex flex-col justify-between overflow-hidden select-none" onclick="if(event.target === this) closeAvatarFullscreen()">
+        <!-- Top Navigation Bar -->
+        <div class="bg-black/60 text-white px-3 py-2.5 flex items-center justify-between shrink-0 z-10 backdrop-blur-xs">
+          <div class="flex items-center gap-3">
+            <button onclick="closeAvatarFullscreen()" class="p-1 -ml-1 hover:bg-white/10 rounded-full transition" title="Back">
+              <i data-lucide="arrow-left" class="w-5 h-5 text-white"></i>
+            </button>
+            <h3 id="avatar-preview-name" class="font-bold text-sm text-white truncate max-w-[200px]">Profile Photo</h3>
+          </div>
+          <button onclick="closeAvatarFullscreen()" class="p-1.5 hover:bg-white/10 rounded-full transition text-white/80 hover:text-white" title="Close">
+            <i data-lucide="x" class="w-5 h-5"></i>
+          </button>
+        </div>
+
+        <!-- Centered High-Res Photo Container -->
+        <div class="flex-1 flex items-center justify-center p-3" onclick="closeAvatarFullscreen()">
+          <div class="relative w-full max-w-[320px] aspect-square rounded-2xl overflow-hidden shadow-2xl border border-white/10" onclick="event.stopPropagation()">
+            <img id="avatar-preview-img" src="" 
+                 class="w-full h-full object-cover">
+          </div>
+        </div>
+
+        <!-- Bottom WhatsApp Quick Actions Bar -->
+        <div class="bg-black/60 text-white px-6 py-3 flex items-center justify-around shrink-0 z-10 backdrop-blur-xs border-t border-white/10">
+          <button onclick="closeAvatarFullscreen(); contactProfileMessageAction()" class="flex flex-col items-center gap-1 text-emerald-400 hover:text-emerald-300 transition">
+            <i data-lucide="message-square" class="w-5 h-5"></i>
+            <span class="text-[10px] font-medium text-white/90">Message</span>
+          </button>
+          <button onclick="closeAvatarFullscreen(); contactProfileAudioCallAction()" class="flex flex-col items-center gap-1 text-emerald-400 hover:text-emerald-300 transition">
+            <i data-lucide="phone" class="w-5 h-5"></i>
+            <span class="text-[10px] font-medium text-white/90">Audio</span>
+          </button>
+          <button onclick="closeAvatarFullscreen(); contactProfileVideoCallAction()" class="flex flex-col items-center gap-1 text-emerald-400 hover:text-emerald-300 transition">
+            <i data-lucide="video" class="w-5 h-5"></i>
+            <span class="text-[10px] font-medium text-white/90">Video</span>
+          </button>
+          <button onclick="closeAvatarFullscreen(); contactProfileMeetingAction()" class="flex flex-col items-center gap-1 text-emerald-400 hover:text-emerald-300 transition">
+            <i data-lucide="users" class="w-5 h-5"></i>
+            <span class="text-[10px] font-medium text-white/90">Meet</span>
+          </button>
         </div>
       </div>
 

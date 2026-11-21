@@ -2093,17 +2093,22 @@ function contactProfileMeetingAction() {
   createMeetingRoom();
 }
 
-function openAvatarFullscreen() {
-  if (!currentViewingContact) return;
+function openAvatarFullscreen(customUrl, customName) {
   const modal = document.getElementById('avatar-preview-modal');
   const img = document.getElementById('avatar-preview-img');
   const name = document.getElementById('avatar-preview-name');
-  if (modal && img) {
-    img.src = currentViewingContact.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(currentViewingContact.name)}&background=075E54&color=fff`;
-    if (name) name.textContent = currentViewingContact.name;
-    modal.classList.remove('hidden');
-    if (window.lucide) lucide.createIcons();
-  }
+  if (!modal || !img) return;
+
+  const targetName = customName || (currentViewingContact ? currentViewingContact.name : 'Profile Photo');
+  const targetAvatar = customUrl || (currentViewingContact ? currentViewingContact.avatar : null) || `https://ui-avatars.com/api/?name=${encodeURIComponent(targetName)}&background=075E54&color=fff`;
+
+  img.src = targetAvatar;
+  img.onerror = () => {
+    img.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(targetName)}&background=075E54&color=fff`;
+  };
+  if (name) name.textContent = targetName;
+  modal.classList.remove('hidden');
+  if (window.lucide) lucide.createIcons();
 }
 
 function closeAvatarFullscreen() {
