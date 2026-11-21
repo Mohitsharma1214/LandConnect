@@ -2187,6 +2187,12 @@ async function initiateDirectCall(targetUserId, targetName, targetAvatar, target
   showCallModal(targetName, targetAvatar, targetRole, callType);
 
   localStream = await getMediaStream(callType);
+  if (localStream) {
+    localStream.getAudioTracks().forEach(t => { t.enabled = !isAudioMuted; });
+    localStream.getVideoTracks().forEach(t => { t.enabled = !isVideoMuted; });
+  }
+  updateMuteButtonsUI();
+
   const localVideo = document.getElementById('local-video');
   if (localVideo) localVideo.srcObject = localStream;
 
@@ -2262,6 +2268,11 @@ function showCallModal(peerName, peerAvatar, peerRole, callType) {
     if (localVideoBox) localVideoBox.classList.remove('hidden');
   }
 
+  isAudioMuted = false;
+  isVideoMuted = false;
+  isSpeakerMuted = false;
+  updateMuteButtonsUI();
+
   startCallTimer();
   if (window.lucide) lucide.createIcons();
 }
@@ -2304,6 +2315,11 @@ function cleanupCall() {
     peerConnection = null;
   }
 
+  isAudioMuted = false;
+  isVideoMuted = false;
+  isSpeakerMuted = false;
+  updateMuteButtonsUI();
+
   const modal = document.getElementById('call-modal');
   if (modal) modal.classList.add('hidden');
 
@@ -2311,26 +2327,98 @@ function cleanupCall() {
   fetchCallLogs();
 }
 
-function toggleMuteAudio() {
-  if (!localStream) return;
-  const audioTracks = localStream.getAudioTracks();
-  if (audioTracks.length > 0) {
-    isAudioMuted = !isAudioMuted;
-    audioTracks[0].enabled = !isAudioMuted;
-    const btn = document.getElementById('btn-toggle-mic');
-    if (btn) btn.classList.toggle('bg-rose-600', isAudioMuted);
+let isSpeakerMuted = false;
+
+function updateMuteButtonsUI() {
+  // 1. Microphone Mute Button & Icon
+  const btnMic = document.getElementById('btn-toggle-mic');
+  const iconMic = document.getElementById('icon-mic');
+  if (btnMic) {
+    btnMic.className = isAudioMuted 
+      ? 'p-3.5 rounded-full bg-rose-600 hover:bg-rose-700 text-white shadow-xl transition transform active:scale-95' 
+      : 'p-3.5 rounded-full bg-white/10 hover:bg-white/20 text-white transition transform active:scale-95';
+    btnMic.setAttribute('title', isAudioMuted ? 'Unmute Microphone' : 'Mute Microphone');
   }
+  if (iconMic) {
+    iconMic.setAttribute('data-lucide', isAudioMuted ? 'mic-off' : 'mic');
+  }
+
+  // Avatar Mic Status Badge in Audio Call View
+  const avatarMicBadge = document.getElementById('call-avatar-mic-badge');
+  const avatarMicIcon = document.getElementById('call-avatar-mic-icon');
+  if (avatarMicBadge) {
+    avatarMicBadge.className = isAudioMuted 
+      ? 'absolute -bottom-1 -right-1 bg-rose-600 p-1.5 rounded-full text-white shadow-lg transition' 
+      : 'absolute -bottom-1 -right-1 bg-wa-green p-1.5 rounded-full text-wa-tealDark shadow-lg transition';
+  }
+  if (avatarMicIcon) {
+    avatarMicIcon.setAttribute('data-lucide', isAudioMuted ? 'mic-off' : 'mic');
+  }
+
+  // 2. Camera On / Off Button & Icon
+  const btnCam = document.getElementById('btn-toggle-cam');
+  const iconCam = document.getElementById('icon-cam');
+  if (btnCam) {
+    btnCam.className = isVideoMuted 
+      ? 'p-3.5 rounded-full bg-rose-600 hover:bg-rose-700 text-white shadow-xl transition transform active:scale-95' 
+      : 'p-3.5 rounded-full bg-white/10 hover:bg-white/20 text-white transition transform active:scale-95';
+    btnCam.setAttribute('title', isVideoMuted ? 'Turn Camera On' : 'Turn Camera Off');
+  }
+  if (iconCam) {
+    iconCam.setAttribute('data-lucide', isVideoMuted ? 'video-off' : 'video');
+  }
+
+  // Local Video Off Visual Indicator
+  const localVideoPlaceholder = document.getElementById('local-video-off-placeholder');
+  const localVideo = document.getElementById('local-video');
+  if (localVideoPlaceholder && localVideo) {
+    if (isVideoMuted) {
+      localVideoPlaceholder.classList.remove('hidden');
+      localVideo.classList.add('opacity-0');
+    } else {
+      localVideoPlaceholder.classList.add('hidden');
+      localVideo.classList.remove('opacity-0');
+    }
+  }
+
+  // 3. Speaker Output Button & Icon
+  const btnSpeaker = document.getElementById('btn-toggle-speaker');
+  const iconSpeaker = document.getElementById('icon-speaker');
+  if (btnSpeaker) {
+    btnSpeaker.className = isSpeakerMuted 
+      ? 'p-3.5 rounded-full bg-rose-600 hover:bg-rose-700 text-white shadow-xl transition transform active:scale-95' 
+      : 'p-3.5 rounded-full bg-white/10 hover:bg-white/20 text-white transition transform active:scale-95';
+    btnSpeaker.setAttribute('title', isSpeakerMuted ? 'Turn Speaker On' : 'Turn Speaker Off');
+  }
+  if (iconSpeaker) {
+    iconSpeaker.setAttribute('data-lucide', isSpeakerMuted ? 'volume-x' : 'volume-2');
+  }
+
+  if (window.lucide) lucide.createIcons();
+}
+
+function toggleMuteAudio() {
+  isAudioMuted = !isAudioMuted;
+  if (localStream) {
+    const audioTracks = localStream.getAudioTracks();
+    audioTracks.forEach(t => {
+      t.enabled = !isAudioMuted;
+    });
+  }
+  updateMuteButtonsUI();
+  showToast(isAudioMuted ? 'Microphone Muted' : 'Microphone Unmuted', 'info');
 }
 
 function toggleVideoCamera() {
-  if (!localStream) return;
-  const videoTracks = localStream.getVideoTracks();
-  if (videoTracks.length > 0) {
-    isVideoMuted = !isVideoMuted;
-    videoTracks[0].enabled = !isVideoMuted;
-    const btn = document.getElementById('btn-toggle-cam');
-    if (btn) btn.classList.toggle('bg-rose-600', isVideoMuted);
+  isVideoMuted = !isVideoMuted;
+  if (localStream) {
+    const videoTracks = localStream.getVideoTracks();
+    videoTracks.forEach(t => {
+      t.enabled = !isVideoMuted;
+    });
   }
+  updateMuteButtonsUI();
+  showToast(isVideoMuted ? 'Camera Turned Off' : 'Camera Turned On', 'info');
 }
 
 function toggleVideoCameraFlip() {
@@ -2338,7 +2426,14 @@ function toggleVideoCameraFlip() {
 }
 
 function toggleSpeaker() {
-  showToast('Speaker output toggled', 'info');
+  isSpeakerMuted = !isSpeakerMuted;
+  const remoteAudio = document.getElementById('remote-audio');
+  const remoteVideo = document.getElementById('remote-video');
+  if (remoteAudio) remoteAudio.muted = isSpeakerMuted;
+  if (remoteVideo) remoteVideo.muted = isSpeakerMuted;
+
+  updateMuteButtonsUI();
+  showToast(isSpeakerMuted ? 'Speaker Muted' : 'Speaker Active', 'info');
 }
 
 function handleIncomingCall(data) {
@@ -2381,6 +2476,12 @@ async function acceptIncomingCall() {
   );
 
   localStream = await getMediaStream(activeCallType);
+  if (localStream) {
+    localStream.getAudioTracks().forEach(t => { t.enabled = !isAudioMuted; });
+    localStream.getVideoTracks().forEach(t => { t.enabled = !isVideoMuted; });
+  }
+  updateMuteButtonsUI();
+
   const localVideo = document.getElementById('local-video');
   if (localVideo) localVideo.srcObject = localStream;
 
