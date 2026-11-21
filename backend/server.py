@@ -1210,5 +1210,6 @@ if os.path.exists(STORAGE_BUCKET_DIR):
 
 if __name__ == "__main__":
     import uvicorn
-    print("Starting LandConnect Server on http://0.0.0.0:8000...")
-    uvicorn.run("server:app", host="0.0.0.0", port=8000, reload=True)
+    port = int(os.getenv("PORT", 8000))
+    print(f"Starting LandConnect Server on http://0.0.0.0:{port}...")
+    uvicorn.run("server:app", host="0.0.0.0", port=port, reload=True)
