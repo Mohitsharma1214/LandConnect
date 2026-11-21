@@ -506,31 +506,87 @@ async def api_get_messages(request):
     
     my_id = payload["sub"]
     conn = get_connection()
-    cursor = conn.cursor()
-    cursor.execute("""
-        SELECT m.*, 
-               s.name as sender_name, s.avatar as sender_avatar,
-               r.name as receiver_name, r.avatar as receiver_avatar,
-               l.title as listing_title, l.price as listing_price, l.images as listing_images
-        FROM messages m
-        JOIN users s ON m.sender_id = s.id
-        JOIN users r ON m.receiver_id = r.id
-        LEFT JOIN listings l ON m.listing_id = l.id
-        WHERE (m.sender_id = %s AND m.receiver_id = %s)
-           OR (m.sender_id = %s AND m.receiver_id = %s)
-        ORDER BY m.created_at ASC
-    """, (my_id, other_user_id, other_user_id, my_id))
-    rows = []
-    for r in cursor.fetchall():
-        d = serialize_dict(dict(r))
-        if d.get("listing_images"):
-            try:
-                d["listing_images"] = json.loads(d["listing_images"]) if isinstance(d["listing_images"], str) else d["listing_images"]
-            except Exception:
-                d["listing_images"] = []
-        rows.append(d)
-    cursor.close()
-    conn.close()
+    try:
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT m.*, 
+                   s.name as sender_name, s.avatar as sender_avatar,
+                   r.name as receiver_name, r.avatar as receiver_avatar,
+                   l.title as listing_title, l.price as listing_price, l.images as listing_images
+            FROM messages m
+            JOIN users s ON m.sender_id = s.id
+            JOIN users r ON m.receiver_id = r.id
+            LEFT JOIN listings l ON m.listing_id = l.id
+            WHERE (m.sender_id = %s AND m.receiver_id = %s)
+               OR (m.sender_id = %s AND m.receiver_id = %s)
+            ORDER BY m.created_at ASC
+        """, (my_id, other_user_id, other_user_id, my_id))
+        rows = []
+        for r in cursor.fetchall():
+            d = serialize_dict(dict(r))
+            if d.get("listing_images"):
+                try:
+                    d["listing_images"] = json.loads(d["listing_images"]) if isinstance(d["listing_images"], str) else d["listing_images"]
+                except Exception:
+                    d["listing_images"] = []
+            rows.append(d)
+        cursor.execute("UPDATE messages SET is_read = 1 WHERE sender_id = %s AND receiver_id = %s AND is_read = 0", (other_user_id, my_id))
+        conn.commit()
+    finally:
+        cursor.close()
+        conn.close()
+    return JSONResponse(rows)
+
+async def api_conversations(request):
+    auth_header = request.headers.get("Authorization", "")
+    token = auth_header.replace("Bearer ", "") if "Bearer " in auth_header else auth_header
+    payload = decode_jwt_token(token)
+    if not payload:
+        return JSONResponse({"error": "Unauthorized."}, status_code=401)
+    
+    my_id = int(payload["sub"])
+    conn = get_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT 
+                u.id AS peer_id,
+                u.name AS peer_name,
+                u.avatar AS peer_avatar,
+                u.role AS peer_role,
+                u.phone_masked AS peer_phone_masked,
+                last_m.content AS last_message,
+                last_m.message_type AS last_message_type,
+                last_m.created_at AS last_message_time,
+                last_m.sender_id AS last_message_sender_id,
+                COALESCE(unread.cnt, 0) AS unread_count
+            FROM (
+                SELECT DISTINCT 
+                    CASE WHEN sender_id = %s THEN receiver_id ELSE sender_id END AS other_user_id
+                FROM messages
+                WHERE sender_id = %s OR receiver_id = %s
+            ) conv
+            JOIN users u ON u.id = conv.other_user_id
+            LEFT JOIN LATERAL (
+                SELECT content, message_type, created_at, sender_id
+                FROM messages
+                WHERE (sender_id = %s AND receiver_id = conv.other_user_id)
+                   OR (sender_id = conv.other_user_id AND receiver_id = %s)
+                ORDER BY created_at DESC
+                LIMIT 1
+            ) last_m ON true
+            LEFT JOIN (
+                SELECT sender_id, COUNT(*) AS cnt
+                FROM messages
+                WHERE receiver_id = %s AND is_read = 0
+                GROUP BY sender_id
+            ) unread ON unread.sender_id = conv.other_user_id
+            ORDER BY last_m.created_at DESC NULLS LAST;
+        """, (my_id, my_id, my_id, my_id, my_id, my_id))
+        rows = [serialize_dict(dict(r)) for r in cursor.fetchall()]
+        cursor.close()
+    finally:
+        conn.close()
     return JSONResponse(rows)
 
 async def api_send_message(request):
@@ -771,6 +827,7 @@ routes = [
     Route("/api/listings/{id:int}", api_delete_listing, methods=["DELETE"]),
     Route("/api/messages/{user_id:int}", api_get_messages, methods=["GET"]),
     Route("/api/messages", api_send_message, methods=["POST"]),
+    Route("/api/conversations", api_conversations, methods=["GET"]),
     Route("/api/calls/history", api_call_logs, methods=["GET"]),
     WebSocketRoute("/ws", websocket_signaling),
     Route("/", serve_index),

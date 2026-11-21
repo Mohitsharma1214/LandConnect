@@ -563,6 +563,7 @@ function switchTab(tabId) {
     }
   });
 
+  if (tabId === 'chats') loadUsersList();
   if (tabId === 'calls') fetchCallLogs();
   if (tabId === 'map') {
     renderMapParcelsSelector();
@@ -1179,17 +1180,81 @@ async function loadMyListings() {
 
 // ================= WHATSAPP STYLE MESSAGING & CHATS =================
 
+// ================= WHATSAPP STYLE MESSAGING & CHATS =================
+
+let recentConversations = [];
+let chatSearchQuery = '';
+
+function getPinnedChatIds() {
+  const uid = currentUser ? currentUser.id : '0';
+  try {
+    return JSON.parse(localStorage.getItem(`landconnect_pinned_${uid}`) || '[]');
+  } catch(e) {
+    return [];
+  }
+}
+
+function savePinnedChatIds(ids) {
+  const uid = currentUser ? currentUser.id : '0';
+  localStorage.setItem(`landconnect_pinned_${uid}`, JSON.stringify(ids));
+}
+
+function getArchivedChatIds() {
+  const uid = currentUser ? currentUser.id : '0';
+  try {
+    return JSON.parse(localStorage.getItem(`landconnect_archived_${uid}`) || '[]');
+  } catch(e) {
+    return [];
+  }
+}
+
+function saveArchivedChatIds(ids) {
+  const uid = currentUser ? currentUser.id : '0';
+  localStorage.setItem(`landconnect_archived_${uid}`, JSON.stringify(ids));
+}
+
+function formatChatTime(isoString) {
+  if (!isoString) return '';
+  const date = new Date(isoString);
+  const now = new Date();
+  const isToday = date.toDateString() === now.toDateString();
+  const yesterday = new Date(now);
+  yesterday.setDate(yesterday.getDate() - 1);
+  const isYesterday = date.toDateString() === yesterday.toDateString();
+
+  if (isToday) {
+    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  } else if (isYesterday) {
+    return 'Yesterday';
+  } else {
+    return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
+  }
+}
+
 async function loadUsersList() {
   if (allUsers.length === 0) {
     renderContactsSkeleton();
   }
   try {
-    const res = await fetch(`${API_BASE}/api/users`);
-    allUsers = await res.json();
+    const [usersRes, convRes] = await Promise.all([
+      fetch(`${API_BASE}/api/users`),
+      currentToken ? fetch(`${API_BASE}/api/conversations`, {
+        headers: { 'Authorization': `Bearer ${currentToken}` }
+      }) : Promise.resolve(null)
+    ]);
+
+    allUsers = await usersRes.json();
+    if (convRes && convRes.ok) {
+      recentConversations = await convRes.json();
+    } else {
+      recentConversations = [];
+    }
+
     renderContactsList();
     renderCallsContactsList();
+    updateUnreadBadgesCounter();
   } catch (err) {
-    console.error('Error loading users:', err);
+    console.error('Error loading users/conversations:', err);
   }
 }
 
@@ -1197,37 +1262,328 @@ function renderContactsList() {
   const container = document.getElementById('contacts-list');
   if (!container) return;
 
-  const otherUsers = allUsers.filter(u => !currentUser || u.id !== currentUser.id);
+  const myId = currentUser ? Number(currentUser.id) : 0;
+  const otherUsers = allUsers.filter(u => Number(u.id) !== myId);
+  const pinnedIds = getPinnedChatIds();
+  const archivedIds = getArchivedChatIds();
 
-  container.innerHTML = otherUsers.map(u => `
+  // Create unified conversation entries
+  const entries = otherUsers.map(u => {
+    const conv = recentConversations.find(c => Number(c.peer_id) === Number(u.id));
+    return {
+      id: Number(u.id),
+      name: u.name,
+      avatar: u.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(u.name)}&background=075E54&color=fff`,
+      role: u.role,
+      phone_masked: u.phone_masked,
+      last_message: conv ? conv.last_message : null,
+      last_message_type: conv ? conv.last_message_type : null,
+      last_message_time: conv ? conv.last_message_time : null,
+      last_message_sender_id: conv ? Number(conv.last_message_sender_id) : null,
+      unread_count: conv ? Number(conv.unread_count) : 0,
+      is_pinned: pinnedIds.includes(Number(u.id)),
+      is_archived: archivedIds.includes(Number(u.id))
+    };
+  });
+
+  // Filter out archived for main view
+  let activeChats = entries.filter(e => !e.is_archived);
+  let archivedChats = entries.filter(e => e.is_archived);
+
+  // Update Archived Bar
+  const archivedBar = document.getElementById('archived-chats-bar');
+  const archivedCount = document.getElementById('archived-chats-count');
+  if (archivedBar && archivedCount) {
+    if (archivedChats.length > 0) {
+      archivedBar.classList.remove('hidden');
+      archivedCount.textContent = archivedChats.length;
+    } else {
+      archivedBar.classList.add('hidden');
+    }
+  }
+
+  // Filter by search query if any
+  if (chatSearchQuery.trim()) {
+    const q = chatSearchQuery.toLowerCase();
+    activeChats = activeChats.filter(e => 
+      e.name.toLowerCase().includes(q) || 
+      e.role.toLowerCase().includes(q) || 
+      (e.last_message && e.last_message.toLowerCase().includes(q))
+    );
+  }
+
+  // Sort Active Chats:
+  // 1. Pinned chats first
+  // 2. Most recent message time descending
+  // 3. Contacts with no messages alphabetically
+  activeChats.sort((a, b) => {
+    if (a.is_pinned && !b.is_pinned) return -1;
+    if (!a.is_pinned && b.is_pinned) return 1;
+
+    if (a.last_message_time && b.last_message_time) {
+      return new Date(b.last_message_time) - new Date(a.last_message_time);
+    }
+    if (a.last_message_time && !b.last_message_time) return -1;
+    if (!a.last_message_time && b.last_message_time) return 1;
+
+    return a.name.localeCompare(b.name);
+  });
+
+  if (activeChats.length === 0) {
+    container.innerHTML = `
+      <div class="text-center py-10 px-4 text-slate-400">
+        <i data-lucide="message-square-off" class="w-8 h-8 mx-auto mb-2 opacity-50"></i>
+        <p class="text-xs font-semibold">No chats found</p>
+        <p class="text-[10px] mt-0.5">Start a new conversation with buyers, sellers or brokers</p>
+      </div>
+    `;
+    if (window.lucide) lucide.createIcons();
+    return;
+  }
+
+  container.innerHTML = activeChats.map(u => renderChatRowHtml(u, false)).join('');
+  if (window.lucide) lucide.createIcons();
+}
+
+function renderChatRowHtml(u, isArchivedView = false) {
+  const isMine = currentUser && (u.last_message_sender_id === Number(currentUser.id));
+  const timeFormatted = formatChatTime(u.last_message_time);
+  
+  let previewText = 'Tap to start conversation...';
+  let previewPrefix = '';
+
+  if (u.last_message) {
+    if (isMine) {
+      previewPrefix = '<span class="text-emerald-600 mr-0.5 font-bold">✓✓</span> ';
+    }
+    if (u.last_message_type === 'audio') {
+      previewText = '🎙️ Voice note';
+    } else if (u.last_message_type === 'meeting') {
+      previewText = '🎥 Video Meeting Room';
+    } else if (u.last_message_type === 'property_inquiry') {
+      previewText = '📍 Land parcel inquiry';
+    } else {
+      previewText = escapeQuotes(u.last_message);
+    }
+  }
+
+  const hasUnread = u.unread_count > 0;
+
+  return `
     <div onclick="startChatWithUser(${u.id}, '${escapeQuotes(u.name)}', '${escapeQuotes(u.avatar)}', '${u.role}')"
-         class="p-3 flex items-center justify-between hover:bg-slate-50 cursor-pointer transition">
-      <div class="flex items-center gap-3">
-        <div class="relative">
-          <img src="${u.avatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100'}" class="w-11 h-11 rounded-full object-cover">
+         class="group px-3.5 py-3 flex items-center justify-between hover:bg-slate-50 active:bg-slate-100 cursor-pointer transition select-none ${u.is_pinned ? 'bg-emerald-50/40 border-l-4 border-wa-teal' : ''}">
+      <div class="flex items-center gap-3 min-w-0 flex-1 pr-2">
+        <div class="relative shrink-0">
+          <img src="${u.avatar}" onerror="this.src='https://ui-avatars.com/api/?name=${encodeURIComponent(u.name)}&background=075E54&color=fff'" 
+               class="w-11 h-11 rounded-full object-cover border border-slate-200">
           <span class="absolute bottom-0 right-0 w-3 h-3 rounded-full bg-emerald-500 border-2 border-white"></span>
         </div>
-        <div>
-          <div class="flex items-center gap-1.5">
-            <h4 class="font-bold text-xs text-slate-800">${u.name}</h4>
-            <span class="text-[9px] px-1.5 py-0.2 rounded font-semibold uppercase ${
-              u.role === 'buyer' ? 'bg-blue-100 text-blue-700' :
-              u.role === 'seller' ? 'bg-emerald-100 text-emerald-700' : 'bg-purple-100 text-purple-700'
-            }">${u.role}</span>
+        <div class="min-w-0 flex-1">
+          <div class="flex items-center justify-between mb-0.5">
+            <div class="flex items-center gap-1.5 truncate">
+              <h4 class="font-bold text-xs text-slate-800 truncate">${u.name}</h4>
+              <span class="text-[9px] px-1.5 py-0.2 rounded font-semibold uppercase shrink-0 ${
+                u.role === 'buyer' ? 'bg-blue-100 text-blue-700' :
+                u.role === 'seller' ? 'bg-emerald-100 text-emerald-700' : 'bg-purple-100 text-purple-700'
+              }">${u.role}</span>
+            </div>
+            <span class="text-[10px] shrink-0 font-medium ml-2 ${hasUnread ? 'text-emerald-600 font-bold' : 'text-slate-400'}">${timeFormatted}</span>
           </div>
-          <p class="text-[11px] text-slate-500 truncate max-w-[180px]">Tap to send WhatsApp style message...</p>
-        </div>
-      </div>
-      <div class="text-right">
-        <span class="text-[10px] text-slate-400">Online</span>
-        <div class="mt-1">
-          <i data-lucide="chevron-right" class="w-4 h-4 text-slate-300"></i>
+          <div class="flex items-center justify-between">
+            <p class="text-[11px] truncate pr-2 ${hasUnread ? 'text-slate-900 font-bold' : 'text-slate-500'}">
+              ${previewPrefix}${previewText}
+            </p>
+            <div class="flex items-center gap-1.5 shrink-0">
+              ${u.is_pinned ? '<i data-lucide="pin" class="w-3.5 h-3.5 text-wa-teal rotate-45 inline-block"></i>' : ''}
+              ${hasUnread ? `<span class="bg-wa-green text-wa-tealDark text-[10px] font-bold px-1.5 py-0.2 rounded-full min-w-[18px] text-center shadow-xs">${u.unread_count}</span>` : ''}
+              
+              <!-- Quick Action Hover Menu -->
+              <div class="opacity-0 group-hover:opacity-100 transition flex items-center gap-1 ml-1">
+                ${!isArchivedView ? `
+                  <button onclick="event.stopPropagation(); togglePinChat(${u.id})" 
+                          class="p-1 hover:bg-slate-200 text-slate-400 hover:text-wa-teal rounded-full transition" 
+                          title="${u.is_pinned ? 'Unpin' : 'Pin to top'}">
+                    <i data-lucide="${u.is_pinned ? 'pin-off' : 'pin'}" class="w-3.5 h-3.5"></i>
+                  </button>
+                  <button onclick="event.stopPropagation(); toggleArchiveChat(${u.id})" 
+                          class="p-1 hover:bg-slate-200 text-slate-400 hover:text-wa-teal rounded-full transition" 
+                          title="Archive Chat">
+                    <i data-lucide="archive" class="w-3.5 h-3.5"></i>
+                  </button>
+                ` : `
+                  <button onclick="event.stopPropagation(); toggleArchiveChat(${u.id})" 
+                          class="p-1 hover:bg-slate-200 text-slate-400 hover:text-wa-teal rounded-full transition" 
+                          title="Unarchive Chat">
+                    <i data-lucide="archive-restore" class="w-3.5 h-3.5"></i>
+                  </button>
+                `}
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>
-  `).join('');
+  `;
+}
+
+function renderArchivedContactsList() {
+  const container = document.getElementById('archived-contacts-list');
+  const countText = document.getElementById('archived-modal-count-text');
+  if (!container) return;
+
+  const myId = currentUser ? Number(currentUser.id) : 0;
+  const otherUsers = allUsers.filter(u => Number(u.id) !== myId);
+  const archivedIds = getArchivedChatIds();
+
+  const archivedEntries = otherUsers.filter(u => archivedIds.includes(Number(u.id))).map(u => {
+    const conv = recentConversations.find(c => Number(c.peer_id) === Number(u.id));
+    return {
+      id: Number(u.id),
+      name: u.name,
+      avatar: u.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(u.name)}&background=075E54&color=fff`,
+      role: u.role,
+      phone_masked: u.phone_masked,
+      last_message: conv ? conv.last_message : null,
+      last_message_type: conv ? conv.last_message_type : null,
+      last_message_time: conv ? conv.last_message_time : null,
+      last_message_sender_id: conv ? Number(conv.last_message_sender_id) : null,
+      unread_count: conv ? Number(conv.unread_count) : 0,
+      is_pinned: false,
+      is_archived: true
+    };
+  });
+
+  if (countText) {
+    countText.textContent = `${archivedEntries.length} archived conversation${archivedEntries.length === 1 ? '' : 's'}`;
+  }
+
+  if (archivedEntries.length === 0) {
+    container.innerHTML = `
+      <div class="text-center py-12 px-4 text-slate-400">
+        <i data-lucide="archive" class="w-8 h-8 mx-auto mb-2 opacity-40"></i>
+        <p class="text-xs font-semibold text-slate-600">No archived chats</p>
+        <p class="text-[10px] text-slate-400 mt-0.5">Archived chats will appear here</p>
+      </div>
+    `;
+    if (window.lucide) lucide.createIcons();
+    return;
+  }
+
+  container.innerHTML = archivedEntries.map(u => renderChatRowHtml(u, true)).join('');
+  if (window.lucide) lucide.createIcons();
+}
+
+function updateUnreadBadgesCounter() {
+  const badge = document.getElementById('chats-badge');
+  if (!badge) return;
+
+  const archivedIds = getArchivedChatIds();
+  const totalUnread = recentConversations.reduce((acc, c) => {
+    if (!archivedIds.includes(Number(c.peer_id))) {
+      return acc + (Number(c.unread_count) || 0);
+    }
+    return acc;
+  }, 0);
+
+  if (totalUnread > 0) {
+    badge.textContent = totalUnread;
+    badge.classList.remove('hidden');
+  } else {
+    badge.classList.add('hidden');
+  }
+}
+
+function handleChatSearch(val) {
+  chatSearchQuery = val || '';
+  renderContactsList();
+}
+
+function togglePinChat(peerId) {
+  const pid = Number(peerId);
+  let pinned = getPinnedChatIds();
+  const isPinned = pinned.includes(pid);
+  if (isPinned) {
+    pinned = pinned.filter(id => id !== pid);
+    showToast('Chat unpinned', 'info');
+  } else {
+    pinned.unshift(pid);
+    showToast('Chat pinned to top', 'success');
+  }
+  savePinnedChatIds(pinned);
+  renderContactsList();
+  updateHeaderPinArchiveButtons();
+}
+
+function toggleArchiveChat(peerId) {
+  const pid = Number(peerId);
+  let archived = getArchivedChatIds();
+  const isArchived = archived.includes(pid);
+  if (isArchived) {
+    archived = archived.filter(id => id !== pid);
+    showToast('Chat unarchived', 'info');
+  } else {
+    archived.push(pid);
+    let pinned = getPinnedChatIds().filter(id => id !== pid);
+    savePinnedChatIds(pinned);
+    showToast('Chat archived', 'info');
+  }
+  saveArchivedChatIds(archived);
+  renderContactsList();
+  renderArchivedContactsList();
+  updateHeaderPinArchiveButtons();
+  updateUnreadBadgesCounter();
+}
+
+function togglePinCurrentChat() {
+  if (!activeChatPeer) return;
+  togglePinChat(activeChatPeer.id);
+}
+
+function toggleArchiveCurrentChat() {
+  if (!activeChatPeer) return;
+  const pid = activeChatPeer.id;
+  toggleArchiveChat(pid);
+  closeActiveChat();
+}
+
+function updateHeaderPinArchiveButtons() {
+  if (!activeChatPeer) return;
+  const pid = Number(activeChatPeer.id);
+  const pinnedIds = getPinnedChatIds();
+  const archivedIds = getArchivedChatIds();
+
+  const btnPin = document.getElementById('btn-chat-pin-header');
+  const btnArchive = document.getElementById('btn-chat-archive-header');
+
+  if (btnPin) {
+    const isPinned = pinnedIds.includes(pid);
+    btnPin.className = isPinned 
+      ? 'p-1.5 rounded-full bg-white/20 text-wa-green font-bold transition'
+      : 'p-1.5 rounded-full hover:bg-white/10 text-emerald-100 hover:text-white transition';
+    btnPin.setAttribute('title', isPinned ? 'Unpin Conversation' : 'Pin Conversation');
+  }
+
+  if (btnArchive) {
+    const isArchived = archivedIds.includes(pid);
+    btnArchive.className = isArchived 
+      ? 'p-1.5 rounded-full bg-white/20 text-amber-300 font-bold transition'
+      : 'p-1.5 rounded-full hover:bg-white/10 text-emerald-100 hover:text-white transition';
+    btnArchive.setAttribute('title', isArchived ? 'Unarchive Conversation' : 'Archive Conversation');
+  }
 
   if (window.lucide) lucide.createIcons();
+}
+
+function openArchivedChatsModal() {
+  renderArchivedContactsList();
+  const modal = document.getElementById('archived-chats-modal');
+  if (modal) modal.classList.remove('hidden');
+  if (window.lucide) lucide.createIcons();
+}
+
+function closeArchivedChatsModal() {
+  const modal = document.getElementById('archived-chats-modal');
+  if (modal) modal.classList.add('hidden');
 }
 
 let chatSyncInterval = null;
@@ -1244,6 +1600,16 @@ async function startChatWithUser(userId, name, avatar, role) {
 
   const chatView = document.getElementById('active-chat-view');
   if (chatView) chatView.classList.remove('hidden');
+
+  updateHeaderPinArchiveButtons();
+
+  // Mark this conversation's unread count as 0 locally
+  const conv = recentConversations.find(c => Number(c.peer_id) === Number(userId));
+  if (conv) {
+    conv.unread_count = 0;
+    updateUnreadBadgesCounter();
+    renderContactsList();
+  }
 
   await fetchChatMessages(userId);
   switchTab('chats');
@@ -1264,6 +1630,7 @@ function closeActiveChat() {
   const chatView = document.getElementById('active-chat-view');
   if (chatView) chatView.classList.add('hidden');
   activeChatPeer = null;
+  loadUsersList();
 }
 
 async function fetchChatMessages(otherUserId) {
@@ -1274,6 +1641,18 @@ async function fetchChatMessages(otherUserId) {
     });
     const messages = await res.json();
     renderChatMessages(messages);
+
+    const countEl = document.getElementById('chat-peer-msg-count');
+    if (countEl) {
+      countEl.textContent = `${messages.length} ${messages.length === 1 ? 'message' : 'messages'}`;
+    }
+
+    const conv = recentConversations.find(c => Number(c.peer_id) === Number(otherUserId));
+    if (conv) {
+      conv.unread_count = 0;
+      updateUnreadBadgesCounter();
+      renderContactsList();
+    }
   } catch (err) {
     console.error('Error fetching messages:', err);
   }
@@ -1298,8 +1677,13 @@ async function syncChatMessages(otherUserId) {
         addedAny = true;
       }
     }
-    if (addedAny && window.lucide) {
-      lucide.createIcons();
+    if (addedAny) {
+      const countEl = document.getElementById('chat-peer-msg-count');
+      if (countEl) {
+        const currentTotal = document.querySelectorAll('#chat-messages-container > div[id^="msg-bubble-"]').length;
+        countEl.textContent = `${currentTotal} ${currentTotal === 1 ? 'message' : 'messages'}`;
+      }
+      if (window.lucide) lucide.createIcons();
     }
   } catch (err) {
     // Silent catch for background polling
@@ -1618,6 +2002,36 @@ async function sendChatMessage() {
     created_at: new Date().toISOString()
   };
   appendMessageToChat(optimisticMsg, true);
+
+  // Update in-memory recent conversation & promote to top
+  const peerId = Number(activeChatPeer.id);
+  let conv = recentConversations.find(c => Number(c.peer_id) === peerId);
+  if (!conv) {
+    conv = {
+      peer_id: peerId,
+      peer_name: activeChatPeer.name || 'User',
+      peer_avatar: activeChatPeer.avatar || '',
+      peer_role: activeChatPeer.role || 'buyer',
+      last_message: content,
+      last_message_type: 'text',
+      last_message_time: new Date().toISOString(),
+      last_message_sender_id: currentUser ? Number(currentUser.id) : 0,
+      unread_count: 0
+    };
+    recentConversations.unshift(conv);
+  } else {
+    conv.last_message = content;
+    conv.last_message_type = 'text';
+    conv.last_message_time = new Date().toISOString();
+    conv.last_message_sender_id = currentUser ? Number(currentUser.id) : 0;
+  }
+  renderContactsList();
+
+  const countEl = document.getElementById('chat-peer-msg-count');
+  if (countEl) {
+    const currentTotal = document.querySelectorAll('#chat-messages-container > div[id^="msg-bubble-"]').length;
+    countEl.textContent = `${currentTotal} ${currentTotal === 1 ? 'message' : 'messages'}`;
+  }
 
   const payload = {
     type: 'chat_message',
@@ -2580,10 +2994,41 @@ function initWebSocket() {
             if (!exists) {
               appendMessageToChat(msg, false);
             }
-          } else {
-            const badge = document.getElementById('chats-badge');
-            if (badge) badge.classList.remove('hidden');
+            const countEl = document.getElementById('chat-peer-msg-count');
+            if (countEl) {
+              const currentTotal = document.querySelectorAll('#chat-messages-container > div[id^="msg-bubble-"]').length;
+              countEl.textContent = `${currentTotal} ${currentTotal === 1 ? 'message' : 'messages'}`;
+            }
           }
+
+          // Real-time update of recent conversations list & unread counters
+          const peerId = (msgSenderId === myId) ? msgReceiverId : msgSenderId;
+          let conv = recentConversations.find(c => Number(c.peer_id) === peerId);
+          if (!conv) {
+            conv = {
+              peer_id: peerId,
+              peer_name: msg.sender_name || 'User',
+              peer_avatar: msg.sender_avatar || '',
+              peer_role: 'buyer',
+              last_message: msg.content,
+              last_message_type: msg.message_type,
+              last_message_time: msg.created_at,
+              last_message_sender_id: msgSenderId,
+              unread_count: isCurrentChat ? 0 : 1
+            };
+            recentConversations.unshift(conv);
+          } else {
+            conv.last_message = msg.content;
+            conv.last_message_type = msg.message_type;
+            conv.last_message_time = msg.created_at;
+            conv.last_message_sender_id = msgSenderId;
+            if (!isCurrentChat) {
+              conv.unread_count = (Number(conv.unread_count) || 0) + 1;
+            }
+          }
+
+          renderContactsList();
+          updateUnreadBadgesCounter();
           break;
         }
 

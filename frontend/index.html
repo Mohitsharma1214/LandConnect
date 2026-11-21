@@ -409,9 +409,21 @@
             <div class="p-2 border-b border-slate-200 bg-white">
               <div class="bg-slate-100 rounded-lg px-3 py-1.5 flex items-center gap-2 text-xs text-slate-600">
                 <i data-lucide="search" class="w-3.5 h-3.5 text-slate-400"></i>
-                <input type="text" placeholder="Search or start new chat" class="bg-transparent outline-none w-full text-xs">
+                <input type="text" id="chat-search-input" oninput="handleChatSearch(this.value)" placeholder="Search or start new chat" class="bg-transparent outline-none w-full text-xs">
               </div>
             </div>
+
+            <!-- WhatsApp Archived Bar (Appears when archived chats exist) -->
+            <div id="archived-chats-bar" onclick="openArchivedChatsModal()" class="hidden px-4 py-2.5 bg-white border-b border-slate-100 flex items-center justify-between hover:bg-slate-50 cursor-pointer transition select-none">
+              <div class="flex items-center gap-3 text-slate-700">
+                <div class="w-6 h-6 rounded-full bg-slate-100 text-wa-teal flex items-center justify-center">
+                  <i data-lucide="archive" class="w-3.5 h-3.5"></i>
+                </div>
+                <span class="font-bold text-xs">Archived</span>
+              </div>
+              <span id="archived-chats-count" class="text-xs text-wa-teal font-bold font-mono">0</span>
+            </div>
+
             <div id="contacts-list" class="divide-y divide-slate-100 bg-white">
               <!-- Initial Skeleton Chat Rows -->
               <div class="p-3 flex items-center justify-between">
@@ -456,21 +468,27 @@
                 </button>
                 <img id="chat-peer-avatar" src="" class="w-9 h-9 rounded-full object-cover border border-white/20">
                 <div>
-                  <h3 id="chat-peer-name" class="font-bold text-sm leading-tight">Name</h3>
-                  <p id="chat-peer-status" class="text-[10px] text-emerald-200 flex items-center gap-1">
+                  <h3 id="chat-peer-name" class="font-bold text-sm leading-tight truncate max-w-[140px]">Name</h3>
+                  <p id="chat-peer-status" class="text-[10px] text-emerald-200 flex items-center gap-1 truncate">
                     <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
-                    <span id="chat-peer-role" class="uppercase font-semibold">Seller</span> • Phone Protected
+                    <span id="chat-peer-role" class="uppercase font-semibold">Seller</span> • <span id="chat-peer-msg-count" class="font-medium">0 messages</span>
                   </p>
                 </div>
               </div>
-              <div class="flex items-center gap-1.5">
-                <button onclick="createMeetingRoom()" title="Start Virtual Meeting Room" class="p-2 rounded-full hover:bg-white/10 text-emerald-100 hover:text-white transition">
+              <div class="flex items-center gap-1">
+                <button onclick="togglePinCurrentChat()" id="btn-chat-pin-header" title="Pin / Unpin Conversation" class="p-1.5 rounded-full hover:bg-white/10 text-emerald-100 hover:text-white transition">
+                  <i data-lucide="pin" class="w-4 h-4"></i>
+                </button>
+                <button onclick="toggleArchiveCurrentChat()" id="btn-chat-archive-header" title="Archive / Unarchive Conversation" class="p-1.5 rounded-full hover:bg-white/10 text-emerald-100 hover:text-white transition">
+                  <i data-lucide="archive" class="w-4 h-4"></i>
+                </button>
+                <button onclick="createMeetingRoom()" title="Start Virtual Meeting Room" class="p-1.5 rounded-full hover:bg-white/10 text-emerald-100 hover:text-white transition">
                   <i data-lucide="users" class="w-4 h-4"></i>
                 </button>
-                <button onclick="triggerCallFromChat('video')" title="Start Video Call" class="p-2 rounded-full hover:bg-white/10 text-emerald-100 hover:text-white transition">
-                  <i data-lucide="video" class="w-5 h-5"></i>
+                <button onclick="triggerCallFromChat('video')" title="Start Video Call" class="p-1.5 rounded-full hover:bg-white/10 text-emerald-100 hover:text-white transition">
+                  <i data-lucide="video" class="w-4 h-4"></i>
                 </button>
-                <button onclick="triggerCallFromChat('audio')" title="Start Voice Call" class="p-2 rounded-full hover:bg-white/10 text-emerald-100 hover:text-white transition">
+                <button onclick="triggerCallFromChat('audio')" title="Start Voice Call" class="p-1.5 rounded-full hover:bg-white/10 text-emerald-100 hover:text-white transition">
                   <i data-lucide="phone" class="w-4 h-4"></i>
                 </button>
               </div>
@@ -1560,6 +1578,24 @@
             Delete
           </button>
         </div>
+      </div>
+    </div>
+
+    <!-- ================= ARCHIVED CHATS FULL-SCREEN VIEW ================= -->
+    <div id="archived-chats-modal" class="hidden absolute inset-0 bg-white flex flex-col z-40">
+      <div class="bg-wa-teal text-white px-3 py-3 flex items-center justify-between shadow-sm">
+        <div class="flex items-center gap-2">
+          <button onclick="closeArchivedChatsModal()" class="p-1 hover:bg-white/10 rounded-full">
+            <i data-lucide="arrow-left" class="w-5 h-5"></i>
+          </button>
+          <div>
+            <h3 class="font-bold text-sm leading-tight">Archived Chats</h3>
+            <p id="archived-modal-count-text" class="text-[10px] text-emerald-200">These chats stay archived</p>
+          </div>
+        </div>
+      </div>
+      <div id="archived-contacts-list" class="flex-1 overflow-y-auto divide-y divide-slate-100 bg-white">
+        <!-- Rendered archived chats -->
       </div>
     </div>
 
