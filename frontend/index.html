@@ -852,10 +852,35 @@
           </div>
 
           <div>
-            <label class="block text-slate-600 font-medium mb-0.5">Image URL</label>
-            <input type="url" id="listing-image" 
-                   value="https://images.unsplash.com/photo-1500382017468-9049fed747ef?w=800"
-                   class="w-full border border-slate-200 rounded-xl px-3 py-1.5 outline-none focus:border-wa-teal">
+            <label class="block text-slate-600 font-medium mb-1">Land Parcel Photography</label>
+            <!-- Visual Upload Dropzone -->
+            <div id="new-listing-dropzone" onclick="document.getElementById('new-listing-file-input').click()" 
+                 class="border-2 border-dashed border-emerald-300 hover:border-wa-teal bg-emerald-50/50 hover:bg-emerald-50 rounded-2xl p-3.5 text-center cursor-pointer transition">
+              <input type="file" id="new-listing-file-input" accept="image/*" class="hidden" 
+                     onchange="handleListingImageUpload(this, 'new-listing-preview-box', 'new-listing-preview-img', 'listing-image', 'new-listing-bucket-status')">
+              <div class="flex flex-col items-center justify-center gap-1 text-slate-600">
+                <div class="w-8 h-8 rounded-full bg-emerald-100 text-wa-teal flex items-center justify-center">
+                  <i data-lucide="cloud-upload" class="w-4 h-4"></i>
+                </div>
+                <span class="font-bold text-xs text-slate-800">Tap to upload land photo into bucket</span>
+                <span class="text-[10px] text-slate-400">PNG, JPG, WEBP stored in persistent bucket</span>
+              </div>
+            </div>
+
+            <!-- Upload Preview Box & Bucket Badge (Hidden by default, shown upon upload) -->
+            <div id="new-listing-preview-box" class="hidden mt-2 relative rounded-2xl overflow-hidden border border-slate-200">
+              <img id="new-listing-preview-img" src="" class="w-full h-32 object-cover">
+              <div class="absolute bottom-2 left-2 right-2 bg-slate-900/90 backdrop-blur-md text-white text-[10px] p-2 rounded-xl flex items-center justify-between">
+                <span id="new-listing-bucket-status" class="flex items-center gap-1 font-semibold text-emerald-300 truncate">
+                  <i data-lucide="check-circle" class="w-3.5 h-3.5"></i> Ready in Bucket
+                </span>
+                <button type="button" onclick="document.getElementById('new-listing-file-input').click()" class="text-[10px] text-slate-300 hover:text-white underline font-medium">
+                  Replace
+                </button>
+              </div>
+            </div>
+
+            <input type="hidden" id="listing-image" value="https://images.unsplash.com/photo-1500382017468-9049fed747ef?w=800">
           </div>
 
           <div>
@@ -1041,8 +1066,35 @@
           </div>
 
           <div>
-            <label class="block text-slate-600 font-medium mb-0.5">Image URL</label>
-            <input type="url" id="edit-listing-image" required class="w-full border border-slate-200 rounded-xl px-3 py-1.5 outline-none focus:border-wa-teal">
+            <label class="block text-slate-600 font-medium mb-1">Land Parcel Photography</label>
+            <!-- Visual Upload Dropzone -->
+            <div id="edit-listing-dropzone" onclick="document.getElementById('edit-listing-file-input').click()" 
+                 class="border-2 border-dashed border-emerald-300 hover:border-wa-teal bg-emerald-50/50 hover:bg-emerald-50 rounded-2xl p-3.5 text-center cursor-pointer transition">
+              <input type="file" id="edit-listing-file-input" accept="image/*" class="hidden" 
+                     onchange="handleListingImageUpload(this, 'edit-listing-preview-box', 'edit-listing-preview-img', 'edit-listing-image', 'edit-listing-bucket-status')">
+              <div class="flex flex-col items-center justify-center gap-1 text-slate-600">
+                <div class="w-8 h-8 rounded-full bg-emerald-100 text-wa-teal flex items-center justify-center">
+                  <i data-lucide="cloud-upload" class="w-4 h-4"></i>
+                </div>
+                <span class="font-bold text-xs text-slate-800">Tap to upload / replace photo in bucket</span>
+                <span class="text-[10px] text-slate-400">Stores directly in storage bucket</span>
+              </div>
+            </div>
+
+            <!-- Upload Preview Box & Bucket Badge -->
+            <div id="edit-listing-preview-box" class="mt-2 relative rounded-2xl overflow-hidden border border-slate-200">
+              <img id="edit-listing-preview-img" src="" class="w-full h-32 object-cover">
+              <div class="absolute bottom-2 left-2 right-2 bg-slate-900/90 backdrop-blur-md text-white text-[10px] p-2 rounded-xl flex items-center justify-between">
+                <span id="edit-listing-bucket-status" class="flex items-center gap-1 font-semibold text-emerald-300 truncate">
+                  <i data-lucide="check-circle" class="w-3.5 h-3.5"></i> Ready in Bucket
+                </span>
+                <button type="button" onclick="document.getElementById('edit-listing-file-input').click()" class="text-[10px] text-slate-300 hover:text-white underline font-medium">
+                  Replace
+                </button>
+              </div>
+            </div>
+
+            <input type="hidden" id="edit-listing-image" required>
           </div>
 
           <div>

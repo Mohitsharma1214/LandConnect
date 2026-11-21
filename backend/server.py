@@ -1,6 +1,8 @@
 import os
 import json
 import asyncio
+import base64
+import uuid
 from decimal import Decimal
 from datetime import datetime
 
@@ -137,6 +139,76 @@ async def api_switch_role(request):
         "token": new_token,
         "user": serialize_dict(updated_profile)
     })
+
+# Persistent Storage Bucket configuration
+STORAGE_BUCKET_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "storage_bucket")
+os.makedirs(STORAGE_BUCKET_DIR, exist_ok=True)
+
+S3_BUCKET_NAME = os.getenv("S3_BUCKET_NAME") or os.getenv("AWS_S3_BUCKET")
+AWS_ACCESS_KEY_ID = os.getenv("AWS_ACCESS_KEY_ID")
+AWS_SECRET_ACCESS_KEY = os.getenv("AWS_SECRET_ACCESS_KEY")
+AWS_ENDPOINT_URL = os.getenv("AWS_ENDPOINT_URL") or os.getenv("S3_ENDPOINT_URL")
+AWS_REGION = os.getenv("AWS_REGION", "us-east-2")
+
+async def api_upload_image(request):
+    auth_header = request.headers.get("Authorization", "")
+    token = auth_header.replace("Bearer ", "") if "Bearer " in auth_header else auth_header
+    payload = decode_jwt_token(token)
+    if not payload:
+        return JSONResponse({"error": "Unauthorized."}, status_code=401)
+
+    try:
+        data = await request.json()
+        raw_file_data = data.get("file_data")
+        raw_filename = data.get("filename", "property_plot.jpg")
+
+        if not raw_file_data:
+            return JSONResponse({"error": "No file data provided."}, status_code=400)
+
+        # Strip data URL prefix if present (e.g. data:image/jpeg;base64,...)
+        if "," in raw_file_data:
+            raw_file_data = raw_file_data.split(",", 1)[1]
+
+        file_bytes = base64.b64decode(raw_file_data)
+        ext = os.path.splitext(raw_filename)[1] or ".jpg"
+        unique_name = f"land_{uuid.uuid4().hex[:12]}{ext}"
+        target_path = os.path.join(STORAGE_BUCKET_DIR, unique_name)
+
+        with open(target_path, "wb") as f:
+            f.write(file_bytes)
+
+        public_url = f"/bucket/{unique_name}"
+        bucket_provider = "Local Persistent Storage Bucket"
+
+        # If Cloud S3 / Neon bucket is configured
+        if S3_BUCKET_NAME and AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY:
+            try:
+                import boto3
+                client_kwargs = {
+                    "aws_access_key_id": AWS_ACCESS_KEY_ID,
+                    "aws_secret_access_key": AWS_SECRET_ACCESS_KEY,
+                    "region_name": AWS_REGION
+                }
+                if AWS_ENDPOINT_URL:
+                    client_kwargs["endpoint_url"] = AWS_ENDPOINT_URL
+                s3 = boto3.client("s3", **client_kwargs)
+                s3.upload_file(target_path, S3_BUCKET_NAME, unique_name, ExtraArgs={"ACL": "public-read"})
+                public_url = f"https://{S3_BUCKET_NAME}.s3.{AWS_REGION}.amazonaws.com/{unique_name}"
+                if AWS_ENDPOINT_URL:
+                    public_url = f"{AWS_ENDPOINT_URL}/{S3_BUCKET_NAME}/{unique_name}"
+                bucket_provider = f"Cloud S3 Bucket ({S3_BUCKET_NAME})"
+            except Exception as s3_err:
+                print(f"Warning: Cloud S3 bucket upload failed, using local bucket: {s3_err}")
+
+        return JSONResponse({
+            "success": True,
+            "url": public_url,
+            "filename": unique_name,
+            "bucket": bucket_provider,
+            "size": len(file_bytes)
+        })
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
 
 async def api_users(request):
     """List available users/contacts for chat & calling"""
@@ -537,6 +609,7 @@ routes = [
     Route("/api/auth/login", api_login, methods=["POST"]),
     Route("/api/auth/me", api_me, methods=["GET"]),
     Route("/api/auth/role", api_switch_role, methods=["PUT"]),
+    Route("/api/upload", api_upload_image, methods=["POST"]),
     Route("/api/users", api_users, methods=["GET"]),
     Route("/api/listings", api_get_listings, methods=["GET"]),
     Route("/api/listings", api_create_listing, methods=["POST"]),
@@ -558,6 +631,9 @@ app = Starlette(debug=True, routes=routes, middleware=middleware)
 
 if os.path.exists(FRONTEND_DIR):
     app.mount("/static", StaticFiles(directory=FRONTEND_DIR), name="static")
+
+if os.path.exists(STORAGE_BUCKET_DIR):
+    app.mount("/bucket", StaticFiles(directory=STORAGE_BUCKET_DIR), name="bucket")
 
 if __name__ == "__main__":
     import uvicorn

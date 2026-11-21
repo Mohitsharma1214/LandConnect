@@ -657,7 +657,68 @@ function openNewListingModal() {
     return;
   }
   const modal = document.getElementById('new-listing-modal');
+  const previewBox = document.getElementById('new-listing-preview-box');
+  const fileInput = document.getElementById('new-listing-file-input');
+  if (previewBox) previewBox.classList.add('hidden');
+  if (fileInput) fileInput.value = '';
   if (modal) modal.classList.remove('hidden');
+  if (window.lucide) lucide.createIcons();
+}
+
+// ================= STORAGE BUCKET IMAGE UPLOAD =================
+
+async function handleListingImageUpload(inputEl, previewBoxId, previewImgId, hiddenUrlId, statusId) {
+  const file = inputEl.files && inputEl.files[0];
+  if (!file) return;
+
+  const previewBox = document.getElementById(previewBoxId);
+  const previewImg = document.getElementById(previewImgId);
+  const hiddenInput = document.getElementById(hiddenUrlId);
+  const statusEl = document.getElementById(statusId);
+
+  // Show immediate local preview
+  const localUrl = URL.createObjectURL(file);
+  if (previewImg) previewImg.src = localUrl;
+  if (previewBox) previewBox.classList.remove('hidden');
+  if (statusEl) {
+    statusEl.innerHTML = `<span class="animate-spin inline-block mr-1">⏳</span> Uploading to storage bucket...`;
+  }
+
+  // Convert to Base64
+  const reader = new FileReader();
+  reader.readAsDataURL(file);
+  reader.onloadend = async () => {
+    const base64Data = reader.result;
+
+    try {
+      const res = await fetch(`${API_BASE}/api/upload`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${currentToken}`
+        },
+        body: JSON.stringify({
+          filename: file.name,
+          file_data: base64Data
+        })
+      });
+
+      const data = await res.json();
+      if (data.success && data.url) {
+        if (hiddenInput) hiddenInput.value = data.url;
+        if (statusEl) {
+          statusEl.innerHTML = `<i data-lucide="check-circle" class="w-3.5 h-3.5 text-emerald-400"></i> Stored in ${data.bucket}`;
+          if (window.lucide) lucide.createIcons();
+        }
+      } else {
+        alert('Upload failed: ' + (data.error || 'Server error'));
+        if (statusEl) statusEl.textContent = 'Upload failed';
+      }
+    } catch (err) {
+      console.error('Error uploading image to bucket:', err);
+      if (statusEl) statusEl.textContent = 'Upload error: ' + err.message;
+    }
+  };
 }
 
 function closeNewListingModal() {
@@ -830,7 +891,12 @@ function openEditListing(listingId) {
   document.getElementById('edit-listing-address').value = item.location_address;
   document.getElementById('edit-listing-lat').value = item.latitude;
   document.getElementById('edit-listing-lng').value = item.longitude;
-  document.getElementById('edit-listing-image').value = item.images && item.images.length > 0 ? item.images[0] : '';
+  const imgUrl = item.images && item.images.length > 0 ? item.images[0] : '';
+  document.getElementById('edit-listing-image').value = imgUrl;
+  const editPreviewImg = document.getElementById('edit-listing-preview-img');
+  const editBucketStatus = document.getElementById('edit-listing-bucket-status');
+  if (editPreviewImg && imgUrl) editPreviewImg.src = imgUrl;
+  if (editBucketStatus) editBucketStatus.innerHTML = '<i data-lucide="check-circle" class="w-3.5 h-3.5"></i> Stored in Bucket';
   document.getElementById('edit-listing-desc').value = item.description;
 
   const modal = document.getElementById('edit-listing-modal');
