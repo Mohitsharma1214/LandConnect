@@ -1018,6 +1018,57 @@
         </div>
       </div>
 
+      <!-- ================= SEND TO (WHATSAPP CHATS FORWARDING & SHARING VIEW) ================= -->
+      <div id="send-to-view" class="hidden absolute inset-0 bg-white flex flex-col z-55 overflow-hidden">
+        <!-- Top Bar: Send to... -->
+        <div class="bg-wa-teal text-white px-3 py-2.5 flex items-center justify-between shadow-md shrink-0">
+          <div class="flex items-center gap-2 min-w-0">
+            <button onclick="closeSendToChatsView()" class="p-1 -ml-1 hover:bg-white/10 rounded-full transition" title="Back">
+              <i data-lucide="arrow-left" class="w-5 h-5"></i>
+            </button>
+            <div class="min-w-0">
+              <h2 class="font-bold text-base leading-tight">Send to...</h2>
+              <p class="text-[10px] text-emerald-200 truncate" id="send-to-subtitle">Select contact to share</p>
+            </div>
+          </div>
+          <button onclick="focusSendToSearch()" class="p-1.5 hover:bg-white/10 rounded-full transition text-emerald-100 hover:text-white shrink-0" title="Search chats">
+            <i data-lucide="search" class="w-5 h-5"></i>
+          </button>
+        </div>
+
+        <!-- Sharing Card Banner -->
+        <div id="send-to-contact-banner" class="bg-emerald-50/70 border-b border-emerald-100 px-3.5 py-2.5 flex items-center justify-between shrink-0">
+          <div class="flex items-center gap-2.5 min-w-0">
+            <img id="send-to-banner-avatar" src="" onerror="this.src='https://ui-avatars.com/api/?name=User&background=075E54&color=fff'" class="w-9 h-9 rounded-full object-cover border border-emerald-200 shrink-0">
+            <div class="min-w-0">
+              <p class="text-xs font-bold text-slate-800 truncate" id="send-to-banner-name">Contact Name</p>
+              <p class="text-[10px] text-slate-500 font-mono truncate" id="send-to-banner-sub">+91 98*** • SELLER</p>
+            </div>
+          </div>
+          <span class="text-[9px] px-2 py-0.5 rounded-full font-bold bg-wa-teal text-white uppercase shrink-0">Contact Card</span>
+        </div>
+
+        <!-- Search Bar -->
+        <div class="p-2.5 border-b border-slate-100 bg-slate-50 shrink-0">
+          <div class="relative">
+            <i data-lucide="search" class="w-4 h-4 text-slate-400 absolute left-3 top-2.5"></i>
+            <input type="text" id="send-to-search-input" oninput="handleSendToSearch(this.value)" placeholder="Search chats or start new message..." 
+                   class="w-full bg-white rounded-xl pl-9 pr-4 py-1.5 text-xs border border-slate-200 outline-none focus:border-wa-teal transition">
+          </div>
+        </div>
+
+        <!-- Chats List Header -->
+        <div class="px-3.5 py-2 bg-slate-100/60 border-b border-slate-100 text-[11px] font-bold text-slate-500 uppercase tracking-wider shrink-0 flex items-center justify-between">
+          <span>Recent chats</span>
+          <span id="send-to-contacts-count" class="text-[10px] lowercase text-slate-400 font-normal">0 contacts</span>
+        </div>
+
+        <!-- Chats List Container -->
+        <div id="send-to-chats-list" class="flex-1 overflow-y-auto divide-y divide-slate-100">
+          <!-- Populated dynamically -->
+        </div>
+      </div>
+
       <!-- Floating Action Button for Sellers/Brokers (Post Land) -->
       <button id="floating-post-btn" onclick="openNewListingModal()" 
               class="hidden absolute bottom-5 right-5 bg-wa-green hover:bg-emerald-500 text-wa-tealDark p-3.5 rounded-full shadow-2xl transition transform hover:scale-105 active:scale-95 z-20"

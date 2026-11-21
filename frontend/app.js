@@ -1423,6 +1423,8 @@ function renderChatRowHtml(u, isArchivedView = false) {
       previewText = '🎙️ Voice note';
     } else if (u.last_message_type === 'meeting') {
       previewText = '🎥 Video Meeting Room';
+    } else if (u.last_message_type === 'contact_card' || (u.last_message && u.last_message.startsWith('Contact Card:'))) {
+      previewText = '👤 ' + (u.last_message.replace('Contact Card:', '').split('•')[0].trim());
     } else if (u.last_message_type === 'property_inquiry') {
       previewText = '📍 Land parcel inquiry';
     } else {
@@ -2047,12 +2049,219 @@ function closeAvatarFullscreen() {
 
 function shareContactProfile() {
   if (!currentViewingContact) return;
-  const info = `${currentViewingContact.name} (${(currentViewingContact.role||'user').toUpperCase()}) on LandConnect\nPhone: ${currentViewingContact.phone_masked || '+91 98*** **321'}\nStatus: ${currentViewingContact.bio || 'Available on LandConnect'}`;
-  navigator.clipboard.writeText(info).then(() => {
-    showToast('Contact info copied to clipboard', 'info');
-  }).catch(() => {
-    showToast(`Shared: ${currentViewingContact.name}`, 'info');
+  openSendToChatsView(currentViewingContact);
+}
+
+// ================= SEND TO (WHATSAPP CHATS SHARING & FORWARDING) =================
+let contactBeingShared = null;
+let sendToSearchQuery = '';
+
+function openSendToChatsView(contact) {
+  contactBeingShared = contact || currentViewingContact;
+  if (!contactBeingShared) return;
+
+  const view = document.getElementById('send-to-view');
+  if (!view) return;
+
+  // Populate banner with shared contact details
+  const bannerAvatar = document.getElementById('send-to-banner-avatar');
+  const bannerName = document.getElementById('send-to-banner-name');
+  const bannerSub = document.getElementById('send-to-banner-sub');
+  const subtitle = document.getElementById('send-to-subtitle');
+
+  const avatar = contactBeingShared.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(contactBeingShared.name)}&background=075E54&color=fff`;
+  if (bannerAvatar) bannerAvatar.src = avatar;
+  if (bannerName) bannerName.textContent = contactBeingShared.name;
+  if (bannerSub) bannerSub.textContent = `${(contactBeingShared.role||'user').toUpperCase()} • ${contactBeingShared.phone_masked || '+91 98*** **321'}`;
+  if (subtitle) subtitle.textContent = `Select contact to share ${contactBeingShared.name}`;
+
+  const searchInput = document.getElementById('send-to-search-input');
+  if (searchInput) searchInput.value = '';
+  sendToSearchQuery = '';
+
+  renderSendToChatsList();
+  view.classList.remove('hidden');
+  if (window.lucide) lucide.createIcons();
+}
+
+function closeSendToChatsView() {
+  const view = document.getElementById('send-to-view');
+  if (view) view.classList.add('hidden');
+}
+
+function focusSendToSearch() {
+  const searchInput = document.getElementById('send-to-search-input');
+  if (searchInput) {
+    searchInput.focus();
+  }
+}
+
+function handleSendToSearch(query) {
+  sendToSearchQuery = query || '';
+  renderSendToChatsList();
+}
+
+function renderSendToChatsList() {
+  const container = document.getElementById('send-to-chats-list');
+  const countEl = document.getElementById('send-to-contacts-count');
+  if (!container) return;
+
+  const myId = currentUser ? Number(currentUser.id) : 0;
+  const sharedId = contactBeingShared ? Number(contactBeingShared.id) : 0;
+
+  // Filter contacts: exclude myself and exclude the user being shared
+  let availableContacts = allUsers.filter(u => {
+    const uid = Number(u.id);
+    return uid !== myId && uid !== sharedId;
   });
+
+  if (sendToSearchQuery.trim()) {
+    const q = sendToSearchQuery.toLowerCase().trim();
+    availableContacts = availableContacts.filter(u => 
+      u.name.toLowerCase().includes(q) || 
+      (u.role && u.role.toLowerCase().includes(q)) ||
+      (u.phone_masked && u.phone_masked.includes(q))
+    );
+  }
+
+  if (countEl) {
+    countEl.textContent = `${availableContacts.length} ${availableContacts.length === 1 ? 'contact' : 'contacts'}`;
+  }
+
+  if (availableContacts.length === 0) {
+    container.innerHTML = `
+      <div class="text-center py-12 px-4 text-slate-400">
+        <i data-lucide="users-2" class="w-8 h-8 mx-auto mb-2 opacity-40"></i>
+        <p class="text-xs font-semibold text-slate-600">No chats found</p>
+        <p class="text-[10px] text-slate-400 mt-0.5">Try searching for another name or role</p>
+      </div>
+    `;
+    if (window.lucide) lucide.createIcons();
+    return;
+  }
+
+  container.innerHTML = availableContacts.map(u => {
+    const isOnline = onlineUserIds.has(Number(u.id));
+    const avatar = u.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(u.name)}&background=075E54&color=fff`;
+    const role = (u.role || 'user').toLowerCase();
+    const roleBadgeClass = role === 'buyer' ? 'bg-blue-100 text-blue-700' :
+                           role === 'seller' ? 'bg-emerald-100 text-emerald-700' :
+                           'bg-purple-100 text-purple-700';
+
+    return `
+      <div onclick="sendContactCardToUser(${u.id}, '${escapeQuotes(u.name)}', '${escapeQuotes(avatar)}', '${role}')" 
+           class="px-3.5 py-3 flex items-center justify-between hover:bg-slate-50 active:bg-slate-100 cursor-pointer transition select-none group">
+        <div class="flex items-center gap-3 min-w-0 flex-1 pr-2">
+          <div class="relative shrink-0">
+            <img src="${avatar}" onerror="this.src='https://ui-avatars.com/api/?name=${encodeURIComponent(u.name)}&background=075E54&color=fff'" 
+                 class="w-11 h-11 rounded-full object-cover border border-slate-200">
+            <span class="absolute bottom-0 right-0 w-3 h-3 rounded-full ${isOnline ? 'bg-emerald-500 ring-2 ring-white' : 'bg-slate-300 ring-2 ring-white'}"></span>
+          </div>
+          <div class="min-w-0 flex-1">
+            <div class="flex items-center gap-1.5 mb-0.5">
+              <h4 class="font-bold text-xs text-slate-900 truncate">${u.name}</h4>
+              <span class="text-[9px] px-1.5 py-0.2 rounded font-semibold uppercase shrink-0 ${roleBadgeClass}">${role}</span>
+            </div>
+            <p class="text-[10px] text-slate-500 truncate">
+              ${isOnline ? '<span class="text-emerald-600 font-semibold">Online</span>' : (u.phone_masked || 'Offline')}
+            </p>
+          </div>
+        </div>
+        <button class="px-3 py-1.5 bg-wa-green hover:bg-emerald-500 text-wa-tealDark rounded-full text-xs font-bold flex items-center gap-1 shadow-xs transition group-hover:scale-105 shrink-0">
+          <i data-lucide="send" class="w-3.5 h-3.5"></i>
+          <span>Send</span>
+        </button>
+      </div>
+    `;
+  }).join('');
+
+  if (window.lucide) lucide.createIcons();
+}
+
+async function sendContactCardToUser(recipientId, recipientName, recipientAvatar, recipientRole) {
+  if (!contactBeingShared) return;
+
+  const shared = { ...contactBeingShared };
+  const targetId = Number(recipientId);
+
+  // Close sharing view and contact profile
+  closeSendToChatsView();
+  closeContactProfile();
+
+  // Switch into recipient chat screen
+  startChatWithUser(targetId, recipientName, recipientAvatar, recipientRole);
+
+  const contactText = `Contact Card: ${shared.name} (${(shared.role||'user').toUpperCase()}) • ${shared.phone_masked || '+91 98*** **321'}`;
+  const tempId = 'temp_contact_' + Date.now();
+
+  const optimisticMsg = {
+    id: tempId,
+    tempId: tempId,
+    sender_id: currentUser ? currentUser.id : 0,
+    receiver_id: targetId,
+    content: contactText,
+    message_type: 'contact_card',
+    contact_id: shared.id,
+    contact_name: shared.name,
+    contact_role: shared.role,
+    contact_avatar: shared.avatar,
+    contact_phone: shared.phone_masked,
+    contact_bio: shared.bio || 'Available on LandConnect',
+    created_at: new Date().toISOString()
+  };
+
+  appendMessageToChat(optimisticMsg, true);
+
+  if (!chatMessagesCache.has(targetId)) {
+    chatMessagesCache.set(targetId, []);
+  }
+  chatMessagesCache.get(targetId).push(optimisticMsg);
+
+  // 1. Instant WebSocket dispatch (sub-10ms)
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    try {
+      ws.send(JSON.stringify({
+        type: 'chat_message',
+        tempId: tempId,
+        receiver_id: targetId,
+        content: contactText,
+        message_type: 'contact_card',
+        contact_id: shared.id,
+        contact_name: shared.name,
+        contact_role: shared.role,
+        contact_avatar: shared.avatar,
+        contact_phone: shared.phone_masked,
+        contact_bio: shared.bio || 'Available on LandConnect',
+        sender_name: currentUser ? currentUser.name : ''
+      }));
+    } catch (e) {
+      console.error('WS contact share error:', e);
+    }
+  }
+
+  // 2. Persist to Neon DB
+  if (currentToken) {
+    try {
+      await fetch(`${API_BASE}/api/messages`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${currentToken}`
+        },
+        body: JSON.stringify({
+          receiver_id: targetId,
+          content: contactText,
+          message_type: 'contact_card',
+          tempId: tempId,
+          sender_name: currentUser ? currentUser.name : ''
+        })
+      });
+    } catch (e) {
+      console.error('API contact share error:', e);
+    }
+  }
+
+  showToast(`Contact card sent to ${recipientName}`, 'info');
 }
 
 function toggleContactOptionsDropdown() {
@@ -2206,6 +2415,48 @@ function generateMessageHtml(m, isPending = false) {
           <i data-lucide="video" class="w-3.5 h-3.5"></i>
           Join Video Meeting
         </button>
+      </div>
+    `;
+  } 
+  // If shared contact card
+  else if (m.message_type === 'contact_card' || (m.content && m.content.startsWith('Contact Card:'))) {
+    const rawContent = m.content || '';
+    const nameMatch = rawContent.match(/Contact Card:\s*([^(•\n]+)/);
+    const contactName = m.contact_name || (nameMatch ? nameMatch[1].trim() : 'Contact');
+    const roleMatch = rawContent.match(/\(([^)]+)\)/);
+    const contactRole = (m.contact_role || (roleMatch ? roleMatch[1].trim() : 'user')).toLowerCase();
+    const phoneMatch = rawContent.match(/•\s*([+0-9* ]+)/);
+    const contactPhone = m.contact_phone || (phoneMatch ? phoneMatch[1].trim() : '+91 98*** **321');
+    const contactObj = allUsers.find(u => u.name.toLowerCase() === contactName.toLowerCase());
+    const contactId = m.contact_id || (contactObj ? contactObj.id : null);
+    const contactAvatar = m.contact_avatar || (contactObj ? contactObj.avatar : `https://ui-avatars.com/api/?name=${encodeURIComponent(contactName)}&background=075E54&color=fff`);
+    const roleBadgeClass = contactRole === 'buyer' ? 'bg-blue-100 text-blue-700' :
+                           contactRole === 'seller' ? 'bg-emerald-100 text-emerald-700' :
+                           'bg-purple-100 text-purple-700';
+
+    messageContentHtml = `
+      <div class="bg-white text-slate-800 p-3 rounded-2xl shadow-sm border border-slate-200/90 my-1 max-w-[270px]">
+        <div class="flex items-center gap-3">
+          <img src="${contactAvatar}" onerror="this.src='https://ui-avatars.com/api/?name=${encodeURIComponent(contactName)}&background=075E54&color=fff'" class="w-11 h-11 rounded-full object-cover border border-slate-200 shrink-0">
+          <div class="min-w-0 flex-1">
+            <div class="flex items-center gap-1.5">
+              <h4 class="font-bold text-xs text-slate-900 truncate">${escapeQuotes(contactName)}</h4>
+              <span class="text-[8px] px-1.5 py-0.2 rounded font-bold uppercase shrink-0 ${roleBadgeClass}">${contactRole}</span>
+            </div>
+            <p class="text-[10px] text-slate-500 font-mono mt-0.5">${contactPhone}</p>
+            <p class="text-[10px] text-emerald-700 italic truncate mt-0.5">👤 LandConnect Contact</p>
+          </div>
+        </div>
+        <div class="border-t border-slate-100 mt-2.5 pt-2 flex items-center justify-between gap-1.5">
+          <button onclick="${contactId ? `startChatWithUser(${contactId}, '${escapeQuotes(contactName)}', '${escapeQuotes(contactAvatar)}', '${contactRole}')` : ''}" class="flex-1 py-1 px-2 bg-emerald-50 hover:bg-emerald-100 text-wa-teal rounded-lg text-center text-xs font-bold transition flex items-center justify-center gap-1">
+            <i data-lucide="message-square" class="w-3.5 h-3.5"></i>
+            <span>Chat</span>
+          </button>
+          <button onclick="${contactId ? `openContactProfile(${contactId})` : ''}" class="flex-1 py-1 px-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-center text-xs font-bold transition flex items-center justify-center gap-1">
+            <i data-lucide="user" class="w-3.5 h-3.5"></i>
+            <span>View Info</span>
+          </button>
+        </div>
       </div>
     `;
   } 
