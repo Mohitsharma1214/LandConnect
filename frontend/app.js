@@ -214,36 +214,6 @@ async function submitRegister(e) {
   }
 }
 
-async function loginAsDemo(role) {
-  const credentials = {
-    buyer: { email: 'buyer@landconnect.com', password: 'buyer123' },
-    seller: { email: 'seller@landconnect.com', password: 'seller123' },
-    broker: { email: 'broker@landconnect.com', password: 'broker123' }
-  };
-  const cred = credentials[role];
-  if (!cred) return;
-
-  try {
-    const res = await fetch(`${API_BASE}/api/auth/login`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(cred)
-    });
-    const data = await res.json();
-    if (data.token) {
-      currentToken = data.token;
-      currentUser = data.user;
-      localStorage.setItem('landconnect_token', currentToken);
-      showMainApp();
-      await loadListings();
-      await loadUsersList();
-      initWebSocket();
-    }
-  } catch (err) {
-    showAuthFeedback('Demo login error: ' + err.message);
-  }
-}
-
 function handleLogout() {
   if (confirm('Are you sure you want to sign out of LandConnect?')) {
     currentToken = null;
@@ -377,7 +347,7 @@ function renderListings(listings) {
   if (!container) return;
 
   if (listings.length === 0) {
-    container.innerHTML = `<div class="bg-white p-8 rounded-2xl text-center text-slate-400 text-xs">No matching land listings found in Neon DB.</div>`;
+    container.innerHTML = `<div class="bg-white p-8 rounded-2xl text-center text-slate-400 text-xs">No matching land listings found.</div>`;
     return;
   }
 
@@ -528,7 +498,7 @@ async function handleCreateListing(e) {
     });
     const data = await res.json();
     if (data.success) {
-      alert('Land Listing saved directly into Neon PostgreSQL!');
+      alert('Land Listing published successfully!');
       closeNewListingModal();
       await loadListings();
       switchTab('feed');
