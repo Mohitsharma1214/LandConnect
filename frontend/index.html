@@ -458,116 +458,6 @@
               </div>
             </div>
           </div>
-
-          <!-- Active Chat View -->
-          <div id="active-chat-view" class="hidden absolute inset-0 bg-wa-chatBg flex flex-col z-30 chat-pattern">
-            <div class="bg-wa-teal text-white px-3 py-2 flex items-center justify-between shadow-sm">
-              <div class="flex items-center gap-2">
-                <button onclick="closeActiveChat()" class="p-1 hover:bg-white/10 rounded-full">
-                  <i data-lucide="arrow-left" class="w-5 h-5"></i>
-                </button>
-                <img id="chat-peer-avatar" src="" class="w-9 h-9 rounded-full object-cover border border-white/20">
-                <div>
-                  <div class="flex items-center gap-1.5">
-                    <h3 id="chat-peer-name" class="font-bold text-sm leading-tight truncate max-w-[130px]">Name</h3>
-                    <span id="chat-peer-role" class="text-[9px] px-1.5 py-0.5 rounded font-semibold uppercase shrink-0 bg-white/20 text-white leading-none">Seller</span>
-                  </div>
-                  <div id="chat-peer-status-container" class="text-[10px] text-emerald-200 flex items-center gap-1 truncate min-h-[14px] mt-0.5">
-                    <span id="chat-peer-status-dot" class="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0"></span>
-                    <span id="chat-peer-status-text" class="font-normal truncate">online</span>
-                    <span class="text-white/40">•</span>
-                    <span id="chat-peer-msg-count" class="font-medium text-emerald-100/90 truncate">0 messages</span>
-                  </div>
-                </div>
-              </div>
-              <div class="flex items-center gap-1">
-                <button onclick="togglePinCurrentChat()" id="btn-chat-pin-header" title="Pin / Unpin Conversation" class="p-1.5 rounded-full hover:bg-white/10 text-emerald-100 hover:text-white transition">
-                  <i data-lucide="pin" class="w-4 h-4"></i>
-                </button>
-                <button onclick="toggleArchiveCurrentChat()" id="btn-chat-archive-header" title="Archive / Unarchive Conversation" class="p-1.5 rounded-full hover:bg-white/10 text-emerald-100 hover:text-white transition">
-                  <i data-lucide="archive" class="w-4 h-4"></i>
-                </button>
-                <button onclick="createMeetingRoom()" title="Start Virtual Meeting Room" class="p-1.5 rounded-full hover:bg-white/10 text-emerald-100 hover:text-white transition">
-                  <i data-lucide="users" class="w-4 h-4"></i>
-                </button>
-                <button onclick="triggerCallFromChat('video')" title="Start Video Call" class="p-1.5 rounded-full hover:bg-white/10 text-emerald-100 hover:text-white transition">
-                  <i data-lucide="video" class="w-4 h-4"></i>
-                </button>
-                <button onclick="triggerCallFromChat('audio')" title="Start Voice Call" class="p-1.5 rounded-full hover:bg-white/10 text-emerald-100 hover:text-white transition">
-                  <i data-lucide="phone" class="w-4 h-4"></i>
-                </button>
-              </div>
-            </div>
-
-            <div id="chat-messages-container" class="flex-1 p-3 overflow-y-auto space-y-2"></div>
-
-            <!-- Attachment Menu Popup -->
-            <div id="attachment-menu" class="hidden absolute bottom-14 left-3 bg-white rounded-2xl shadow-xl border border-slate-200 p-2 z-40 text-xs w-52 space-y-1">
-              <button onclick="attachListingInChat()" class="w-full text-left p-2 rounded-xl hover:bg-slate-50 flex items-center gap-2 text-slate-700 font-semibold transition">
-                <div class="p-1.5 bg-emerald-100 text-wa-teal rounded-lg"><i data-lucide="map-pin" class="w-3.5 h-3.5"></i></div>
-                <span>Attach Land Parcel</span>
-              </button>
-              <button onclick="createMeetingRoom()" class="w-full text-left p-2 rounded-xl hover:bg-slate-50 flex items-center gap-2 text-slate-700 font-semibold transition">
-                <div class="p-1.5 bg-blue-100 text-blue-700 rounded-lg"><i data-lucide="video" class="w-3.5 h-3.5"></i></div>
-                <span>Virtual Meeting Room</span>
-              </button>
-            </div>
-
-            <!-- WhatsApp Typing Indicator Bubble (In-flow, never overlaps messages) -->
-            <div id="chat-floating-typing" class="hidden px-3 pt-1 pb-1.5 shrink-0 transition-all duration-200">
-              <div class="inline-flex items-center gap-2 bg-white px-3.5 py-2 rounded-2xl rounded-bl-xs shadow-sm border border-slate-200/80">
-                <img id="chat-floating-typing-avatar" src="" class="w-5 h-5 rounded-full object-cover">
-                <div class="flex items-center gap-1.5 px-0.5">
-                  <span class="w-2 h-2 rounded-full bg-wa-teal animate-bounce"></span>
-                  <span class="w-2 h-2 rounded-full bg-wa-teal animate-bounce [animation-delay:0.18s]"></span>
-                  <span class="w-2 h-2 rounded-full bg-wa-teal animate-bounce [animation-delay:0.36s]"></span>
-                </div>
-              </div>
-            </div>
-
-            <div class="bg-slate-100 p-2 flex items-center gap-2 border-t border-slate-200 relative">
-              <button onclick="toggleAttachmentMenu()" id="btn-chat-attach" class="text-slate-500 hover:text-slate-700 p-1 flex-shrink-0">
-                <i data-lucide="paperclip" class="w-5 h-5"></i>
-              </button>
-              
-              <!-- Standard Typing Bar -->
-              <div id="chat-input-row" class="flex-1 flex items-center gap-2">
-                <input type="text" id="chat-input" placeholder="Type a message..." 
-                       class="flex-1 bg-white rounded-full px-4 py-2 text-xs border border-slate-200 outline-none focus:border-wa-teal"
-                       oninput="handleChatInputTyping()"
-                       onkeydown="if(event.key === 'Enter') sendChatMessage()">
-                
-                <!-- Voice Note Mic Button (default when input empty) -->
-                <button id="btn-voice-record" onclick="toggleVoiceRecording()" title="Record Voice Note" 
-                        class="bg-wa-teal hover:bg-wa-tealDark text-white p-2.5 rounded-full transition shadow-sm flex-shrink-0">
-                  <i data-lucide="mic" class="w-4 h-4"></i>
-                </button>
-                
-                <!-- Send Text Button (visible when text entered) -->
-                <button id="btn-send-message" onclick="sendChatMessage()" title="Send Message" 
-                        class="hidden bg-wa-teal hover:bg-wa-tealDark text-white p-2.5 rounded-full transition shadow-sm flex-shrink-0">
-                  <i data-lucide="send" class="w-4 h-4"></i>
-                </button>
-              </div>
-
-              <!-- Live Voice Recording UI (active during recording) -->
-              <div id="chat-recording-row" class="hidden flex-1 flex items-center justify-between bg-white rounded-full px-3 py-1.5 border border-red-200 shadow-inner">
-                <div class="flex items-center gap-2 text-red-600">
-                  <span class="w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse"></span>
-                  <span id="recording-timer" class="font-bold text-xs font-mono">0:00</span>
-                  <span class="text-[10px] text-slate-400">Recording Audio...</span>
-                </div>
-                <div class="flex items-center gap-1.5">
-                  <button onclick="cancelVoiceRecording()" title="Discard recording" class="p-1.5 text-slate-400 hover:text-red-500 rounded-full transition">
-                    <i data-lucide="trash-2" class="w-4 h-4"></i>
-                  </button>
-                  <button onclick="stopAndSendVoiceRecording()" title="Send Voice Note" class="bg-wa-green hover:bg-emerald-500 text-wa-tealDark p-1.5 rounded-full font-bold shadow-sm transition">
-                    <i data-lucide="send" class="w-3.5 h-3.5"></i>
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
         </section>
 
         <!-- ================= TAB 3: CALLS LOGS & DIALING ================= -->
@@ -759,6 +649,117 @@
         </section>
 
       </main>
+
+      <!-- ================= ACTIVE CHAT VIEW (FULL SCREEN TAKEOVER - WHATSAPP STYLE) ================= -->
+      <div id="active-chat-view" class="hidden absolute inset-0 bg-wa-chatBg flex flex-col z-40 chat-pattern">
+        <!-- WhatsApp Chat Top Bar -->
+        <div class="bg-wa-teal text-white px-3 py-2.5 flex items-center justify-between shadow-md shrink-0">
+          <div class="flex items-center gap-2 min-w-0 flex-1">
+            <button onclick="closeActiveChat()" class="p-1 -ml-1 hover:bg-white/10 rounded-full transition" title="Back to Chats">
+              <i data-lucide="arrow-left" class="w-5 h-5"></i>
+            </button>
+            <img id="chat-peer-avatar" src="" class="w-9 h-9 rounded-full object-cover border border-white/20 shrink-0">
+            <div class="min-w-0 flex-1">
+              <div class="flex items-center gap-1.5">
+                <h3 id="chat-peer-name" class="font-bold text-sm leading-tight truncate max-w-[130px]">Name</h3>
+                <span id="chat-peer-role" class="text-[9px] px-1.5 py-0.5 rounded font-semibold uppercase shrink-0 bg-white/20 text-white leading-none">Seller</span>
+              </div>
+              <div id="chat-peer-status-container" class="text-[10px] text-emerald-200 flex items-center gap-1 truncate min-h-[14px] mt-0.5">
+                <span id="chat-peer-status-dot" class="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0"></span>
+                <span id="chat-peer-status-text" class="font-normal truncate">online</span>
+                <span class="text-white/40">•</span>
+                <span id="chat-peer-msg-count" class="font-medium text-emerald-100/90 truncate">0 messages</span>
+              </div>
+            </div>
+          </div>
+          <div class="flex items-center gap-0.5 shrink-0">
+            <button onclick="togglePinCurrentChat()" id="btn-chat-pin-header" title="Pin / Unpin Conversation" class="p-1.5 rounded-full hover:bg-white/10 text-emerald-100 hover:text-white transition">
+              <i data-lucide="pin" class="w-4 h-4"></i>
+            </button>
+            <button onclick="toggleArchiveCurrentChat()" id="btn-chat-archive-header" title="Archive / Unarchive Conversation" class="p-1.5 rounded-full hover:bg-white/10 text-emerald-100 hover:text-white transition">
+              <i data-lucide="archive" class="w-4 h-4"></i>
+            </button>
+            <button onclick="createMeetingRoom()" title="Start Virtual Meeting Room" class="p-1.5 rounded-full hover:bg-white/10 text-emerald-100 hover:text-white transition">
+              <i data-lucide="users" class="w-4 h-4"></i>
+            </button>
+            <button onclick="triggerCallFromChat('video')" title="Start Video Call" class="p-1.5 rounded-full hover:bg-white/10 text-emerald-100 hover:text-white transition">
+              <i data-lucide="video" class="w-4 h-4"></i>
+            </button>
+            <button onclick="triggerCallFromChat('audio')" title="Start Voice Call" class="p-1.5 rounded-full hover:bg-white/10 text-emerald-100 hover:text-white transition">
+              <i data-lucide="phone" class="w-4 h-4"></i>
+            </button>
+          </div>
+        </div>
+
+        <div id="chat-messages-container" class="flex-1 p-3 overflow-y-auto space-y-2"></div>
+
+        <!-- Attachment Menu Popup -->
+        <div id="attachment-menu" class="hidden absolute bottom-14 left-3 bg-white rounded-2xl shadow-xl border border-slate-200 p-2 z-40 text-xs w-52 space-y-1">
+          <button onclick="attachListingInChat()" class="w-full text-left p-2 rounded-xl hover:bg-slate-50 flex items-center gap-2 text-slate-700 font-semibold transition">
+            <div class="p-1.5 bg-emerald-100 text-wa-teal rounded-lg"><i data-lucide="map-pin" class="w-3.5 h-3.5"></i></div>
+            <span>Attach Land Parcel</span>
+          </button>
+          <button onclick="createMeetingRoom()" class="w-full text-left p-2 rounded-xl hover:bg-slate-50 flex items-center gap-2 text-slate-700 font-semibold transition">
+            <div class="p-1.5 bg-blue-100 text-blue-700 rounded-lg"><i data-lucide="video" class="w-3.5 h-3.5"></i></div>
+            <span>Virtual Meeting Room</span>
+          </button>
+        </div>
+
+        <!-- WhatsApp Typing Indicator Bubble (In-flow, never overlaps messages) -->
+        <div id="chat-floating-typing" class="hidden px-3 pt-1 pb-1.5 shrink-0 transition-all duration-200">
+          <div class="inline-flex items-center gap-2 bg-white px-3.5 py-2 rounded-2xl rounded-bl-xs shadow-sm border border-slate-200/80">
+            <img id="chat-floating-typing-avatar" src="" class="w-5 h-5 rounded-full object-cover">
+            <div class="flex items-center gap-1.5 px-0.5">
+              <span class="w-2 h-2 rounded-full bg-wa-teal animate-bounce"></span>
+              <span class="w-2 h-2 rounded-full bg-wa-teal animate-bounce [animation-delay:0.18s]"></span>
+              <span class="w-2 h-2 rounded-full bg-wa-teal animate-bounce [animation-delay:0.36s]"></span>
+            </div>
+          </div>
+        </div>
+
+        <div class="bg-slate-100 p-2 flex items-center gap-2 border-t border-slate-200 relative shrink-0">
+          <button onclick="toggleAttachmentMenu()" id="btn-chat-attach" class="text-slate-500 hover:text-slate-700 p-1 flex-shrink-0">
+            <i data-lucide="paperclip" class="w-5 h-5"></i>
+          </button>
+          
+          <!-- Standard Typing Bar -->
+          <div id="chat-input-row" class="flex-1 flex items-center gap-2">
+            <input type="text" id="chat-input" placeholder="Type a message..." 
+                   class="flex-1 bg-white rounded-full px-4 py-2 text-xs border border-slate-200 outline-none focus:border-wa-teal"
+                   oninput="handleChatInputTyping()"
+                   onkeydown="if(event.key === 'Enter') sendChatMessage()">
+            
+            <!-- Voice Note Mic Button (default when input empty) -->
+            <button id="btn-voice-record" onclick="toggleVoiceRecording()" title="Record Voice Note" 
+                    class="bg-wa-teal hover:bg-wa-tealDark text-white p-2.5 rounded-full transition shadow-sm flex-shrink-0">
+              <i data-lucide="mic" class="w-4 h-4"></i>
+            </button>
+            
+            <!-- Send Text Button (visible when text entered) -->
+            <button id="btn-send-message" onclick="sendChatMessage()" title="Send Message" 
+                    class="hidden bg-wa-teal hover:bg-wa-tealDark text-white p-2.5 rounded-full transition shadow-sm flex-shrink-0">
+              <i data-lucide="send" class="w-4 h-4"></i>
+            </button>
+          </div>
+
+          <!-- Live Voice Recording UI (active during recording) -->
+          <div id="chat-recording-row" class="hidden flex-1 flex items-center justify-between bg-white rounded-full px-3 py-1.5 border border-red-200 shadow-inner">
+            <div class="flex items-center gap-2 text-red-600">
+              <span class="w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse"></span>
+              <span id="recording-timer" class="font-bold text-xs font-mono">0:00</span>
+              <span class="text-[10px] text-slate-400">Recording Audio...</span>
+            </div>
+            <div class="flex items-center gap-1.5">
+              <button onclick="cancelVoiceRecording()" title="Discard recording" class="p-1.5 text-slate-400 hover:text-red-500 rounded-full transition">
+                <i data-lucide="trash-2" class="w-4 h-4"></i>
+              </button>
+              <button onclick="stopAndSendVoiceRecording()" title="Send Voice Note" class="bg-wa-green hover:bg-emerald-500 text-wa-tealDark p-1.5 rounded-full font-bold shadow-sm transition">
+                <i data-lucide="send" class="w-3.5 h-3.5"></i>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
 
       <!-- Floating Action Button for Sellers/Brokers (Post Land) -->
       <button id="floating-post-btn" onclick="openNewListingModal()" 

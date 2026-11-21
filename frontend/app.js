@@ -575,6 +575,12 @@ function applyUserRoleUI() {
 // ================= NAVIGATION TABS =================
 
 function switchTab(tabId) {
+  if (tabId !== 'chats' && activeChatPeer) {
+    const chatView = document.getElementById('active-chat-view');
+    if (chatView && !chatView.classList.contains('hidden')) {
+      closeActiveChat();
+    }
+  }
   activeTab = tabId;
   const tabs = ['feed', 'chats', 'calls', 'map', 'profile'];
   tabs.forEach(t => {
@@ -1789,6 +1795,7 @@ function closeActiveChat() {
   if (messagesContainer) messagesContainer.innerHTML = '';
   activeChatPeer = null;
   updateFloatingTypingUI();
+  switchTab('chats');
   loadUsersList();
 }
 
