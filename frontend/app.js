@@ -6,6 +6,7 @@ let WS_URL = `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${windo
 // --- State Variables ---
 let currentUser = null;
 let currentToken = localStorage.getItem('landconnect_token') || null;
+let selectedRoleForReg = 'buyer';
 let ws = null;
 let activeTab = 'feed';
 let allListings = [];
@@ -16,7 +17,7 @@ let activeChatPeer = null;
 let peerConnection = null;
 let localStream = null;
 let remoteStream = null;
-let activeCallType = 'video'; // 'audio' or 'video'
+let activeCallType = 'video';
 let activeCallTargetId = null;
 let incomingCallData = null;
 let callTimerInterval = null;
@@ -24,7 +25,6 @@ let callSeconds = 0;
 let isAudioMuted = false;
 let isVideoMuted = false;
 
-// Standard STUN servers for NAT traversal
 const rtcConfig = {
   iceServers: [
     { urls: 'stun:stun.l.google.com:19302' },
@@ -38,15 +38,18 @@ document.addEventListener('DOMContentLoaded', async () => {
   setInterval(updateClock, 10000);
 
   if (currentToken) {
-    await fetchUserProfile();
+    const success = await fetchUserProfile();
+    if (success) {
+      showMainApp();
+      await loadListings();
+      await loadUsersList();
+      initWebSocket();
+    } else {
+      showAuthScreen();
+    }
   } else {
-    // Default to Buyer demo account on first load
-    await switchDemoUser('buyer');
+    showAuthScreen();
   }
-
-  await loadListings();
-  await loadUsersList();
-  initWebSocket();
 });
 
 function updateClock() {
@@ -56,34 +59,230 @@ function updateClock() {
   if (clockEl) clockEl.textContent = timeStr;
 }
 
-// ================= 1. AUTHENTICATION & ROLE MANAGEMENT =================
+// ================= VIEW TOGGLING (AUTH SCREEN vs MAIN APP) =================
+
+function showAuthScreen() {
+  const authScreen = document.getElementById('auth-screen');
+  const mainAppScreen = document.getElementById('main-app-screen');
+  if (authScreen) authScreen.classList.remove('hidden');
+  if (mainAppScreen) mainAppScreen.classList.add('hidden');
+  setAuthMode('login');
+  if (window.lucide) lucide.createIcons();
+}
+
+function showMainApp() {
+  const authScreen = document.getElementById('auth-screen');
+  const mainAppScreen = document.getElementById('main-app-screen');
+  if (authScreen) authScreen.classList.add('hidden');
+  if (mainAppScreen) mainAppScreen.classList.remove('hidden');
+  applyUserRoleUI();
+  switchTab('feed');
+  if (window.lucide) lucide.createIcons();
+}
+
+function setAuthMode(mode) {
+  const formLogin = document.getElementById('form-login');
+  const formRegister = document.getElementById('form-register');
+  const btnToggleLogin = document.getElementById('auth-toggle-login');
+  const btnToggleReg = document.getElementById('auth-toggle-reg');
+  const feedback = document.getElementById('auth-feedback');
+  if (feedback) feedback.classList.add('hidden');
+
+  if (mode === 'login') {
+    if (formLogin) formLogin.classList.remove('hidden');
+    if (formRegister) formRegister.classList.add('hidden');
+    if (btnToggleLogin) {
+      btnToggleLogin.className = 'flex-1 py-2 rounded-lg bg-wa-teal text-white shadow font-bold transition';
+    }
+    if (btnToggleReg) {
+      btnToggleReg.className = 'flex-1 py-2 rounded-lg text-slate-600 hover:text-slate-900 font-bold transition';
+    }
+  } else {
+    if (formLogin) formLogin.classList.add('hidden');
+    if (formRegister) formRegister.classList.remove('hidden');
+    if (btnToggleReg) {
+      btnToggleReg.className = 'flex-1 py-2 rounded-lg bg-wa-teal text-white shadow font-bold transition';
+    }
+    if (btnToggleLogin) {
+      btnToggleLogin.className = 'flex-1 py-2 rounded-lg text-slate-600 hover:text-slate-900 font-bold transition';
+    }
+  }
+  if (window.lucide) lucide.createIcons();
+}
+
+function selectRole(role) {
+  selectedRoleForReg = role;
+  const roles = ['buyer', 'seller', 'broker'];
+  roles.forEach(r => {
+    const card = document.getElementById(`role-card-${r}`);
+    if (card) {
+      if (r === role) {
+        card.className = 'cursor-pointer border-2 border-wa-teal rounded-xl p-2 text-center bg-emerald-50/50 flex flex-col items-center gap-0.5 role-card shadow-sm';
+      } else {
+        card.className = 'cursor-pointer border-2 border-slate-200 rounded-xl p-2 text-center hover:border-slate-300 flex flex-col items-center gap-0.5 role-card';
+      }
+    }
+  });
+}
+
+function showAuthFeedback(msg, isError = true) {
+  const feedback = document.getElementById('auth-feedback');
+  if (!feedback) return;
+  feedback.classList.remove('hidden');
+  feedback.textContent = msg;
+  if (isError) {
+    feedback.className = 'text-xs p-2.5 rounded-xl mb-3 font-semibold bg-rose-50 border border-rose-200 text-rose-700';
+  } else {
+    feedback.className = 'text-xs p-2.5 rounded-xl mb-3 font-semibold bg-emerald-50 border border-emerald-200 text-emerald-800';
+  }
+}
+
+// ================= AUTHENTICATION ACTIONS =================
+
+async function submitLogin(e) {
+  e.preventDefault();
+  const email = document.getElementById('login-email').value.trim();
+  const password = document.getElementById('login-password').value;
+  const submitBtn = document.getElementById('btn-login-submit');
+
+  if (submitBtn) submitBtn.disabled = true;
+
+  try {
+    const res = await fetch(`${API_BASE}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password })
+    });
+    const data = await res.json();
+    if (data.token) {
+      currentToken = data.token;
+      currentUser = data.user;
+      localStorage.setItem('landconnect_token', currentToken);
+      showAuthFeedback('Login successful! Welcome to LandConnect.', false);
+      setTimeout(async () => {
+        showMainApp();
+        await loadListings();
+        await loadUsersList();
+        initWebSocket();
+      }, 500);
+    } else {
+      showAuthFeedback(data.error || 'Invalid credentials. Please verify your email and password.');
+    }
+  } catch (err) {
+    showAuthFeedback('Connection error: ' + err.message);
+  } finally {
+    if (submitBtn) submitBtn.disabled = false;
+  }
+}
+
+async function submitRegister(e) {
+  e.preventDefault();
+  const name = document.getElementById('reg-name').value.trim();
+  const email = document.getElementById('reg-email').value.trim();
+  const phone = document.getElementById('reg-phone').value.trim();
+  const password = document.getElementById('reg-password').value;
+  const role = selectedRoleForReg || 'buyer';
+  const submitBtn = document.getElementById('btn-reg-submit');
+
+  if (submitBtn) submitBtn.disabled = true;
+
+  try {
+    const res = await fetch(`${API_BASE}/api/auth/register`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, email, password, role, phone })
+    });
+    const data = await res.json();
+    if (data.token) {
+      currentToken = data.token;
+      currentUser = data.user;
+      localStorage.setItem('landconnect_token', currentToken);
+      showAuthFeedback(`Account created successfully as ${role.toUpperCase()}! Entering app...`, false);
+      setTimeout(async () => {
+        showMainApp();
+        await loadListings();
+        await loadUsersList();
+        initWebSocket();
+      }, 700);
+    } else {
+      showAuthFeedback(data.error || 'Registration failed.');
+    }
+  } catch (err) {
+    showAuthFeedback('Connection error: ' + err.message);
+  } finally {
+    if (submitBtn) submitBtn.disabled = false;
+  }
+}
+
+async function loginAsDemo(role) {
+  const credentials = {
+    buyer: { email: 'buyer@landconnect.com', password: 'buyer123' },
+    seller: { email: 'seller@landconnect.com', password: 'seller123' },
+    broker: { email: 'broker@landconnect.com', password: 'broker123' }
+  };
+  const cred = credentials[role];
+  if (!cred) return;
+
+  try {
+    const res = await fetch(`${API_BASE}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(cred)
+    });
+    const data = await res.json();
+    if (data.token) {
+      currentToken = data.token;
+      currentUser = data.user;
+      localStorage.setItem('landconnect_token', currentToken);
+      showMainApp();
+      await loadListings();
+      await loadUsersList();
+      initWebSocket();
+    }
+  } catch (err) {
+    showAuthFeedback('Demo login error: ' + err.message);
+  }
+}
+
+function handleLogout() {
+  if (confirm('Are you sure you want to sign out of LandConnect?')) {
+    currentToken = null;
+    currentUser = null;
+    localStorage.removeItem('landconnect_token');
+    if (ws) {
+      try { ws.close(); } catch(e){}
+    }
+    showAuthScreen();
+  }
+}
 
 async function fetchUserProfile() {
+  if (!currentToken) return false;
   try {
     const res = await fetch(`${API_BASE}/api/auth/me`, {
       headers: { 'Authorization': `Bearer ${currentToken}` }
     });
     if (res.ok) {
       currentUser = await res.json();
-      applyUserRoleUI();
-    } else {
-      logout();
+      return true;
     }
+    return false;
   } catch (err) {
     console.error('Error fetching profile:', err);
+    return false;
   }
 }
 
 function applyUserRoleUI() {
   if (!currentUser) return;
 
-  // Update Top Bar & Header Avatar & Role text
+  // Header
   const roleText = document.getElementById('header-role-text');
   const avatarImg = document.getElementById('header-avatar');
   if (roleText) roleText.textContent = currentUser.role;
   if (avatarImg && currentUser.avatar) avatarImg.src = currentUser.avatar;
 
-  // Update Profile Tab
+  // Profile Tab
   const pName = document.getElementById('profile-card-name');
   const pRole = document.getElementById('profile-card-role-badge');
   const pEmail = document.getElementById('profile-card-email');
@@ -104,7 +303,7 @@ function applyUserRoleUI() {
     }`;
   }
 
-  // Dynamic Role Permissions on UI
+  // Role Permissions
   const bannerTitle = document.getElementById('banner-role-title');
   const bannerDesc = document.getElementById('banner-role-desc');
   const bannerPostBtn = document.getElementById('banner-post-btn');
@@ -117,13 +316,12 @@ function applyUserRoleUI() {
     if (bannerPostBtn) bannerPostBtn.classList.remove('hidden');
     if (floatingPostBtn) floatingPostBtn.classList.remove('hidden');
     if (bannerTitle) bannerTitle.textContent = `${currentUser.role.toUpperCase()} MODE: LISTING MANAGEMENT`;
-    if (bannerDesc) bannerDesc.textContent = `You have authorization to list land parcels, manage prices, and field buyer calls.`;
+    if (bannerDesc) bannerDesc.textContent = `You are authorized to list land parcels, manage prices, and field buyer calls.`;
     if (permPostStatus) {
       permPostStatus.innerHTML = '<i data-lucide="check" class="w-3.5 h-3.5 text-emerald-500"></i> Authorized';
       permPostStatus.className = 'text-emerald-600 font-bold flex items-center gap-1';
     }
   } else {
-    // Buyer Mode
     if (bannerPostBtn) bannerPostBtn.classList.add('hidden');
     if (floatingPostBtn) floatingPostBtn.classList.add('hidden');
     if (bannerTitle) bannerTitle.textContent = `BUYER EXPLORATION MODE`;
@@ -137,154 +335,7 @@ function applyUserRoleUI() {
   if (window.lucide) lucide.createIcons();
 }
 
-async function switchDemoUser(role) {
-  const credentials = {
-    buyer: { email: 'buyer@landconnect.com', password: 'buyer123' },
-    seller: { email: 'seller@landconnect.com', password: 'seller123' },
-    broker: { email: 'broker@landconnect.com', password: 'broker123' }
-  };
-
-  const cred = credentials[role];
-  if (!cred) return;
-
-  try {
-    const res = await fetch(`${API_BASE}/api/auth/login`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(cred)
-    });
-    const data = await res.json();
-    if (data.token) {
-      currentToken = data.token;
-      currentUser = data.user;
-      localStorage.setItem('landconnect_token', currentToken);
-      applyUserRoleUI();
-      hideQuickDemoSwitch();
-      if (ws && ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ type: 'authenticate', token: currentToken }));
-      }
-      loadListings();
-      loadUsersList();
-      fetchCallLogs();
-    }
-  } catch (err) {
-    console.error('Failed to switch demo user:', err);
-  }
-}
-
-async function handleLogin(e) {
-  e.preventDefault();
-  const email = document.getElementById('login-email').value;
-  const password = document.getElementById('login-password').value;
-
-  try {
-    const res = await fetch(`${API_BASE}/api/auth/login`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password })
-    });
-    const data = await res.json();
-    if (data.token) {
-      currentToken = data.token;
-      currentUser = data.user;
-      localStorage.setItem('landconnect_token', currentToken);
-      applyUserRoleUI();
-      hideAuthModal();
-      initWebSocket();
-      loadListings();
-      loadUsersList();
-    } else {
-      alert(data.error || 'Login failed');
-    }
-  } catch (err) {
-    alert('Login error: ' + err.message);
-  }
-}
-
-async function handleRegister(e) {
-  e.preventDefault();
-  const name = document.getElementById('reg-name').value;
-  const email = document.getElementById('reg-email').value;
-  const password = document.getElementById('reg-password').value;
-  const phone = document.getElementById('reg-phone').value;
-  const roleEl = document.querySelector('input[name="reg-role"]:checked');
-  const role = roleEl ? roleEl.value : 'buyer';
-
-  try {
-    const res = await fetch(`${API_BASE}/api/auth/register`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, email, password, role, phone })
-    });
-    const data = await res.json();
-    if (data.token) {
-      currentToken = data.token;
-      currentUser = data.user;
-      localStorage.setItem('landconnect_token', currentToken);
-      applyUserRoleUI();
-      hideAuthModal();
-      initWebSocket();
-      loadListings();
-      loadUsersList();
-    } else {
-      alert(data.error || 'Registration failed');
-    }
-  } catch (err) {
-    alert('Registration error: ' + err.message);
-  }
-}
-
-function logout() {
-  currentToken = null;
-  currentUser = null;
-  localStorage.removeItem('landconnect_token');
-  showAuthModal();
-}
-
-function toggleQuickDemoSwitch() {
-  const menu = document.getElementById('quick-role-menu');
-  if (menu) menu.classList.toggle('hidden');
-}
-
-function hideQuickDemoSwitch() {
-  const menu = document.getElementById('quick-role-menu');
-  if (menu) menu.classList.add('hidden');
-}
-
-function showAuthModal() {
-  const modal = document.getElementById('auth-modal');
-  if (modal) modal.classList.remove('hidden');
-}
-
-function hideAuthModal() {
-  const modal = document.getElementById('auth-modal');
-  if (modal) modal.classList.add('hidden');
-}
-
-function switchAuthTab(tab) {
-  const formLogin = document.getElementById('form-login');
-  const formReg = document.getElementById('form-register');
-  const tabLogin = document.getElementById('auth-tab-login');
-  const tabReg = document.getElementById('auth-tab-reg');
-
-  if (tab === 'login') {
-    formLogin.classList.remove('hidden');
-    formReg.classList.add('hidden');
-    tabLogin.classList.add('bg-white', 'shadow-sm', 'text-wa-teal');
-    tabLogin.classList.remove('text-slate-600');
-    tabReg.classList.remove('bg-white', 'shadow-sm', 'text-wa-teal');
-    tabReg.classList.add('text-slate-600');
-  } else {
-    formLogin.classList.add('hidden');
-    formReg.classList.remove('hidden');
-    tabReg.classList.add('bg-white', 'shadow-sm', 'text-wa-teal');
-    tabReg.classList.remove('text-slate-600');
-    tabLogin.classList.remove('bg-white', 'shadow-sm', 'text-wa-teal');
-    tabLogin.classList.add('text-slate-600');
-  }
-}
-
-// ================= 2. NAVIGATION TABS =================
+// ================= NAVIGATION TABS =================
 
 function switchTab(tabId) {
   activeTab = tabId;
@@ -309,7 +360,7 @@ function switchTab(tabId) {
   if (window.lucide) lucide.createIcons();
 }
 
-// ================= 3. LAND LISTINGS & COMMUNITY FEED =================
+// ================= LAND LISTINGS & COMMUNITY FEED =================
 
 async function loadListings() {
   try {
@@ -326,7 +377,7 @@ function renderListings(listings) {
   if (!container) return;
 
   if (listings.length === 0) {
-    container.innerHTML = `<div class="bg-white p-8 rounded-2xl text-center text-slate-400 text-xs">No matching land listings found.</div>`;
+    container.innerHTML = `<div class="bg-white p-8 rounded-2xl text-center text-slate-400 text-xs">No matching land listings found in Neon DB.</div>`;
     return;
   }
 
@@ -338,7 +389,6 @@ function renderListings(listings) {
 
     return `
       <div class="bg-white rounded-2xl overflow-hidden shadow-sm border border-slate-200/80 hover:shadow-md transition">
-        <!-- Property Image & Type Tag -->
         <div class="relative h-44 w-full bg-slate-100">
           <img src="${firstImg}" class="w-full h-full object-cover">
           <div class="absolute top-3 left-3 bg-black/60 backdrop-blur-md text-white text-[10px] font-bold px-2.5 py-1 rounded-full uppercase tracking-wider">
@@ -353,7 +403,6 @@ function renderListings(listings) {
           </div>
         </div>
 
-        <!-- Body Details -->
         <div class="p-3.5 space-y-2">
           <h3 class="font-bold text-slate-800 text-sm leading-snug">${item.title}</h3>
           
@@ -366,7 +415,6 @@ function renderListings(listings) {
             ${item.description}
           </p>
 
-          <!-- Owner / Broker Info (With Privacy Masked Phone) -->
           <div class="pt-2 border-t border-slate-100 flex items-center justify-between">
             <div class="flex items-center gap-2">
               <img src="${item.owner_avatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100'}" 
@@ -380,7 +428,6 @@ function renderListings(listings) {
               </div>
             </div>
 
-            <!-- WhatsApp Style Quick Actions: Message & Video/Voice Call -->
             <div class="flex items-center gap-1.5">
               <button onclick="startChatWithUser(${item.owner_id}, '${escapeQuotes(item.owner_name)}', '${escapeQuotes(item.owner_avatar)}', '${item.owner_role}')" 
                       class="bg-emerald-50 hover:bg-emerald-100 text-wa-teal p-2 rounded-xl transition" 
@@ -407,7 +454,6 @@ function renderListings(listings) {
   if (window.lucide) lucide.createIcons();
 }
 
-// Search and filter listeners
 document.addEventListener('input', (e) => {
   if (e.target.id === 'feed-search' || e.target.id === 'feed-filter-type') {
     filterListings();
@@ -435,7 +481,7 @@ function escapeQuotes(str) {
   return str.replace(/'/g, "\\'").replace(/"/g, '&quot;');
 }
 
-// ================= 4. CREATE LISTING MODAL =================
+// ================= CREATE LISTING MODAL =================
 
 function openNewListingModal() {
   if (currentUser?.role === 'buyer') {
@@ -482,7 +528,7 @@ async function handleCreateListing(e) {
     });
     const data = await res.json();
     if (data.success) {
-      alert('Land Listing published successfully!');
+      alert('Land Listing saved directly into Neon PostgreSQL!');
       closeNewListingModal();
       await loadListings();
       switchTab('feed');
@@ -494,7 +540,7 @@ async function handleCreateListing(e) {
   }
 }
 
-// ================= 5. WHATSAPP STYLE MESSAGING & CHATS =================
+// ================= WHATSAPP STYLE MESSAGING & CHATS =================
 
 async function loadUsersList() {
   try {
@@ -547,7 +593,6 @@ function renderContactsList() {
 async function startChatWithUser(userId, name, avatar, role) {
   activeChatPeer = { id: userId, name, avatar, role };
 
-  // Update Chat Header
   const peerName = document.getElementById('chat-peer-name');
   const peerAvatar = document.getElementById('chat-peer-avatar');
   const peerRole = document.getElementById('chat-peer-role');
@@ -653,7 +698,7 @@ function triggerCallFromChat(callType) {
   initiateDirectCall(activeChatPeer.id, activeChatPeer.name, activeChatPeer.avatar, activeChatPeer.role, callType);
 }
 
-// ================= 6. IN-APP AUDIO & VIDEO CALLING (KEY REQUIREMENT) =================
+// ================= IN-APP AUDIO & VIDEO CALLING (KEY REQUIREMENT) =================
 
 function renderCallsContactsList() {
   const container = document.getElementById('calls-contacts-list');
@@ -743,8 +788,6 @@ function renderCallLogs(logs) {
   if (window.lucide) lucide.createIcons();
 }
 
-// --- WebRTC Media Stream Handling ---
-
 async function getMediaStream(callType) {
   try {
     const constraints = {
@@ -753,12 +796,11 @@ async function getMediaStream(callType) {
     };
     return await navigator.mediaDevices.getUserMedia(constraints);
   } catch (err) {
-    console.warn('Camera/Mic permission failed or unavailable, creating mock canvas stream for prototype testing:', err);
+    console.warn('Camera/Mic permission unavailable, falling back to simulated stream for testing:', err);
     return createSimulatedMediaStream(callType);
   }
 }
 
-// Fallback stream generator to ensure video call testing works seamlessly even without physical webcam
 function createSimulatedMediaStream(callType) {
   const canvas = document.createElement('canvas');
   canvas.width = 320;
@@ -784,7 +826,6 @@ function createSimulatedMediaStream(callType) {
   draw();
 
   const stream = canvas.captureStream(25);
-  // Add a silent audio track
   const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
   const osc = audioCtx.createOscillator();
   const dst = audioCtx.createMediaStreamDestination();
@@ -809,18 +850,14 @@ async function initiateDirectCall(targetUserId, targetName, targetAvatar, target
   activeCallTargetId = targetUserId;
   activeCallType = callType;
 
-  // Setup UI
   showCallModal(targetName, targetAvatar, targetRole, callType);
 
-  // Acquire local media
   localStream = await getMediaStream(callType);
   const localVideo = document.getElementById('local-video');
   if (localVideo) localVideo.srcObject = localStream;
 
-  // Create WebRTC PeerConnection
   setupPeerConnection();
 
-  // Send signaling invite over WebSocket
   if (ws && ws.readyState === WebSocket.OPEN) {
     ws.send(JSON.stringify({
       type: 'initiate_call',
@@ -840,14 +877,12 @@ async function initiateDirectCall(targetUserId, targetName, targetAvatar, target
 function setupPeerConnection() {
   peerConnection = new RTCPeerConnection(rtcConfig);
 
-  // Add local tracks to connection
   if (localStream) {
     localStream.getTracks().forEach(track => {
       peerConnection.addTrack(track, localStream);
     });
   }
 
-  // Handle incoming remote stream
   peerConnection.ontrack = (event) => {
     const remoteVideo = document.getElementById('remote-video');
     const remoteAudio = document.getElementById('remote-audio');
@@ -860,7 +895,6 @@ function setupPeerConnection() {
     }
   };
 
-  // ICE Candidates
   peerConnection.onicecandidate = (event) => {
     if (event.candidate && ws && ws.readyState === WebSocket.OPEN && activeCallTargetId) {
       ws.send(JSON.stringify({
@@ -941,8 +975,6 @@ function cleanupCall() {
   fetchCallLogs();
 }
 
-// --- Call Controls ---
-
 function toggleMuteAudio() {
   if (!localStream) return;
   const audioTracks = localStream.getAudioTracks();
@@ -966,15 +998,12 @@ function toggleVideoCamera() {
 }
 
 function toggleVideoCameraFlip() {
-  // Flip front / back camera if mobile device
-  alert('Camera flipped (Front / Rear)');
+  alert('Camera switched (Front / Rear)');
 }
 
 function toggleSpeaker() {
   alert('Speaker output toggled.');
 }
-
-// --- Incoming Call Handling ---
 
 function handleIncomingCall(data) {
   incomingCallData = data;
@@ -1025,7 +1054,6 @@ async function acceptIncomingCall() {
     }));
   }
 
-  // Create WebRTC Offer to connect
   const offer = await peerConnection.createOffer();
   await peerConnection.setLocalDescription(offer);
 
@@ -1050,7 +1078,7 @@ function rejectIncomingCall() {
   incomingCallData = null;
 }
 
-// ================= 7. WEBSOCKET REAL-TIME SIGNALING =================
+// ================= WEBSOCKET REAL-TIME SIGNALING =================
 
 function initWebSocket() {
   if (ws) {
@@ -1079,11 +1107,9 @@ function initWebSocket() {
           break;
 
         case 'new_message':
-          // If message is for active chat, update view
           if (activeChatPeer && data.message.sender_id === activeChatPeer.id) {
             await fetchChatMessages(activeChatPeer.id);
           } else {
-            // Flash badge on CHATS tab
             const badge = document.getElementById('chats-badge');
             if (badge) badge.classList.remove('hidden');
           }
@@ -1141,11 +1167,13 @@ function initWebSocket() {
   };
 
   ws.onclose = () => {
-    setTimeout(initWebSocket, 4000);
+    if (currentToken) {
+      setTimeout(initWebSocket, 4000);
+    }
   };
 }
 
-// ================= 8. MAP VIEW INTEGRATION =================
+// ================= MAP VIEW INTEGRATION =================
 
 function updateMapCard(listing) {
   if (!listing) return;
