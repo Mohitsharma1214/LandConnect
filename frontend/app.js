@@ -477,11 +477,21 @@ function applyUserRoleUI() {
   const pName = document.getElementById('profile-card-name');
   const pRole = document.getElementById('profile-card-role-badge');
   const pEmail = document.getElementById('profile-card-email');
+  const pBio = document.getElementById('profile-card-bio');
   const pPhone = document.getElementById('profile-card-phone');
   const pAvatar = document.getElementById('profile-card-avatar');
   
   if (pName) pName.textContent = currentUser.name || 'User Name';
   if (pEmail) pEmail.textContent = currentUser.email || 'user@example.com';
+  if (pBio) {
+    if (currentUser.bio && currentUser.bio.trim()) {
+      pBio.textContent = currentUser.bio.trim();
+      pBio.classList.remove('hidden');
+    } else {
+      pBio.textContent = '';
+      pBio.classList.add('hidden');
+    }
+  }
   if (pPhone) pPhone.textContent = `Phone: ${currentUser.phone_masked || '+91 98*** **321'} (Protected)`;
   if (pAvatar) {
     pAvatar.src = avatarSrc;
@@ -2875,4 +2885,181 @@ function confirmMapPinLocation() {
 
   closeMapPinPicker();
   showToast(`📍 Set GPS: ${currentPickerLat}, ${currentPickerLng}`);
+}
+
+// ================= EDIT PROFILE MODAL & PROFILE PHOTO UPLOAD =================
+
+function openEditProfileModal() {
+  if (!currentUser) {
+    showToast('Please login to edit profile', 'error');
+    return;
+  }
+
+  const defaultAvatar = `https://ui-avatars.com/api/?name=${encodeURIComponent(currentUser.name || 'User')}&background=075E54&color=fff`;
+  const avatarSrc = currentUser.avatar || defaultAvatar;
+
+  const nameInput = document.getElementById('edit-profile-name');
+  const bioInput = document.getElementById('edit-profile-bio');
+  const avatarUrlInput = document.getElementById('edit-profile-avatar-url');
+  const avatarPreview = document.getElementById('edit-profile-avatar-preview');
+  const emailDisplay = document.getElementById('edit-profile-email-display');
+  const phoneDisplay = document.getElementById('edit-profile-phone-display');
+  const statusEl = document.getElementById('edit-profile-upload-status');
+  const fileInput = document.getElementById('edit-profile-photo-input');
+
+  if (nameInput) nameInput.value = currentUser.name || '';
+  if (bioInput) bioInput.value = currentUser.bio || '';
+  if (avatarUrlInput) avatarUrlInput.value = currentUser.avatar || '';
+  if (emailDisplay) emailDisplay.textContent = currentUser.email || '';
+  if (phoneDisplay) phoneDisplay.textContent = currentUser.phone_masked || '+91 98*** **321 (Masked)';
+  if (fileInput) fileInput.value = '';
+
+  if (avatarPreview) {
+    avatarPreview.src = avatarSrc;
+    avatarPreview.onerror = () => { avatarPreview.src = defaultAvatar; };
+  }
+
+  if (statusEl) {
+    statusEl.textContent = 'Tap camera to upload new photo to cloud bucket';
+    statusEl.className = 'text-[10px] text-slate-500 font-medium text-center';
+  }
+
+  const modal = document.getElementById('edit-profile-modal');
+  if (modal) modal.classList.remove('hidden');
+  if (window.lucide) lucide.createIcons();
+}
+
+function closeEditProfileModal() {
+  const modal = document.getElementById('edit-profile-modal');
+  if (modal) modal.classList.add('hidden');
+}
+
+async function handleProfilePhotoUpload(inputEl) {
+  if (!inputEl.files || !inputEl.files[0]) return;
+  const file = inputEl.files[0];
+  const statusEl = document.getElementById('edit-profile-upload-status');
+  const previewImg = document.getElementById('edit-profile-avatar-preview');
+  const urlInput = document.getElementById('edit-profile-avatar-url');
+
+  if (file.size > 10 * 1024 * 1024) {
+    showToast('Image size exceeds 10MB limit', 'error');
+    if (statusEl) {
+      statusEl.textContent = '⚠️ Image size exceeds 10MB limit';
+      statusEl.className = 'text-[10px] text-rose-500 font-medium text-center';
+    }
+    return;
+  }
+
+  if (statusEl) {
+    statusEl.innerHTML = '<span class="inline-block animate-spin mr-1">⏳</span> Uploading photo to cloud bucket...';
+    statusEl.className = 'text-[10px] text-wa-teal font-medium text-center';
+  }
+
+  try {
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      const base64Data = e.target.result;
+      try {
+        const res = await fetch(`${API_BASE}/api/upload`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(currentToken ? { 'Authorization': `Bearer ${currentToken}` } : {})
+          },
+          body: JSON.stringify({
+            file_data: base64Data,
+            filename: file.name
+          })
+        });
+
+        const data = await res.json();
+        if (res.ok && data.url) {
+          if (previewImg) previewImg.src = data.url;
+          if (urlInput) urlInput.value = data.url;
+          if (statusEl) {
+            statusEl.textContent = '✓ Profile photo uploaded and ready to save';
+            statusEl.className = 'text-[10px] text-emerald-600 font-bold text-center';
+          }
+          showToast('Profile photo uploaded to cloud bucket', 'success');
+        } else {
+          throw new Error(data.error || 'Failed to upload image');
+        }
+      } catch (err) {
+        if (statusEl) {
+          statusEl.textContent = '⚠️ ' + (err.message || 'Upload failed');
+          statusEl.className = 'text-[10px] text-rose-500 font-medium text-center';
+        }
+        showToast(err.message || 'Image upload failed', 'error');
+      }
+    };
+    reader.readAsDataURL(file);
+  } catch (err) {
+    if (statusEl) {
+      statusEl.textContent = '⚠️ Upload error';
+      statusEl.className = 'text-[10px] text-rose-500 font-medium text-center';
+    }
+    showToast('Error reading selected image', 'error');
+  }
+}
+
+async function handleSaveProfile(e) {
+  if (e) e.preventDefault();
+  if (!currentToken) {
+    showToast('Please login to save profile', 'error');
+    return;
+  }
+
+  const nameInput = document.getElementById('edit-profile-name');
+  const bioInput = document.getElementById('edit-profile-bio');
+  const avatarUrlInput = document.getElementById('edit-profile-avatar-url');
+  const btnSave = document.getElementById('btn-save-profile');
+
+  const name = nameInput ? nameInput.value.trim() : '';
+  const bio = bioInput ? bioInput.value.trim() : '';
+  const avatar = avatarUrlInput ? avatarUrlInput.value.trim() : '';
+
+  if (!name) {
+    showToast('Name cannot be empty', 'error');
+    return;
+  }
+
+  const originalBtnHtml = btnSave ? btnSave.innerHTML : 'Save Profile';
+  if (btnSave) {
+    btnSave.disabled = true;
+    btnSave.innerHTML = '<span class="inline-block animate-spin mr-1">⏳</span> Saving...';
+  }
+
+  try {
+    const res = await fetch(`${API_BASE}/api/auth/profile`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${currentToken}`
+      },
+      body: JSON.stringify({ name, bio, avatar })
+    });
+
+    const data = await res.json();
+    if (res.ok && data.success) {
+      currentUser = data.user;
+      if (data.token) {
+        currentToken = data.token;
+        localStorage.setItem('landconnect_token', currentToken);
+      }
+      localStorage.setItem('landconnect_user', JSON.stringify(currentUser));
+      applyUserRoleUI();
+      closeEditProfileModal();
+      showToast('Profile updated successfully!', 'success');
+    } else {
+      showToast(data.error || 'Failed to update profile', 'error');
+    }
+  } catch (err) {
+    showToast('Network error updating profile', 'error');
+  } finally {
+    if (btnSave) {
+      btnSave.disabled = false;
+      btnSave.innerHTML = originalBtnHtml;
+      if (window.lucide) lucide.createIcons();
+    }
+  }
 }

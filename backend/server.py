@@ -15,7 +15,7 @@ from starlette.staticfiles import StaticFiles
 from starlette.websockets import WebSocket, WebSocketDisconnect
 
 from database import init_db, get_connection, DATABASE_URL
-from auth import register_user, login_user, decode_jwt_token, get_user_profile
+from auth import register_user, login_user, decode_jwt_token, get_user_profile, create_jwt_token
 from seed_data import seed_listings
 
 # Helper to serialize psycopg2 rows (handles Decimal and datetime)
@@ -134,10 +134,47 @@ async def api_switch_role(request):
     conn.close()
 
     updated_profile = get_user_profile(payload["sub"])
-    new_token = create_jwt_token(payload["sub"], updated_profile["email"], new_role)
+    new_token = create_jwt_token(payload["sub"], new_role, updated_profile["email"])
     return JSONResponse({
         "token": new_token,
         "user": serialize_dict(updated_profile)
+    })
+
+async def api_update_profile(request):
+    auth_header = request.headers.get("Authorization", "")
+    token = auth_header.replace("Bearer ", "") if "Bearer " in auth_header else auth_header
+    payload = decode_jwt_token(token)
+    if not payload:
+        return JSONResponse({"error": "Unauthorized or invalid token."}, status_code=401)
+    
+    data = await request.json()
+    name = data.get("name", "").strip()
+    avatar = data.get("avatar", "").strip()
+    bio = data.get("bio", "").strip()
+
+    if not name:
+        return JSONResponse({"error": "Name cannot be empty."}, status_code=400)
+
+    user_id = payload["sub"]
+    conn = get_connection()
+    try:
+        cursor = conn.cursor()
+        if avatar:
+            cursor.execute("UPDATE users SET name = %s, avatar = %s, bio = %s WHERE id = %s", (name, avatar, bio, user_id))
+        else:
+            cursor.execute("UPDATE users SET name = %s, bio = %s WHERE id = %s", (name, bio, user_id))
+        conn.commit()
+        cursor.close()
+    finally:
+        conn.close()
+
+    updated_profile = get_user_profile(user_id)
+    new_token = create_jwt_token(user_id, updated_profile["role"], updated_profile["email"])
+    return JSONResponse({
+        "success": True,
+        "token": new_token,
+        "user": serialize_dict(updated_profile),
+        "message": "Profile updated successfully."
     })
 
 # Persistent Storage Bucket configuration
@@ -159,7 +196,7 @@ async def api_upload_image(request):
 
     try:
         data = await request.json()
-        raw_file_data = data.get("file_data")
+        raw_file_data = data.get("file_data") or data.get("image")
         raw_filename = data.get("filename", "property_plot.jpg")
 
         if not raw_file_data:
@@ -626,6 +663,7 @@ routes = [
     Route("/api/auth/login", api_login, methods=["POST"]),
     Route("/api/auth/me", api_me, methods=["GET"]),
     Route("/api/auth/role", api_switch_role, methods=["PUT"]),
+    Route("/api/auth/profile", api_update_profile, methods=["PUT"]),
     Route("/api/upload", api_upload_image, methods=["POST"]),
     Route("/api/users", api_users, methods=["GET"]),
     Route("/api/listings", api_get_listings, methods=["GET"]),
