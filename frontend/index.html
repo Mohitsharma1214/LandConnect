@@ -468,11 +468,16 @@
                 </button>
                 <img id="chat-peer-avatar" src="" class="w-9 h-9 rounded-full object-cover border border-white/20">
                 <div>
-                  <h3 id="chat-peer-name" class="font-bold text-sm leading-tight truncate max-w-[140px]">Name</h3>
-                  <p id="chat-peer-status" class="text-[10px] text-emerald-200 flex items-center gap-1 truncate">
-                    <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
-                    <span id="chat-peer-role" class="uppercase font-semibold">Seller</span> • <span id="chat-peer-msg-count" class="font-medium">0 messages</span>
-                  </p>
+                  <div class="flex items-center gap-1.5">
+                    <h3 id="chat-peer-name" class="font-bold text-sm leading-tight truncate max-w-[130px]">Name</h3>
+                    <span id="chat-peer-role" class="text-[9px] px-1.5 py-0.5 rounded font-semibold uppercase shrink-0 bg-white/20 text-white leading-none">Seller</span>
+                  </div>
+                  <div id="chat-peer-status-container" class="text-[10px] text-emerald-200 flex items-center gap-1 truncate min-h-[14px] mt-0.5">
+                    <span id="chat-peer-status-dot" class="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0"></span>
+                    <span id="chat-peer-status-text" class="font-normal truncate">online</span>
+                    <span class="text-white/40">•</span>
+                    <span id="chat-peer-msg-count" class="font-medium text-emerald-100/90 truncate">0 messages</span>
+                  </div>
                 </div>
               </div>
               <div class="flex items-center gap-1">

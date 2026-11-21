@@ -89,6 +89,24 @@ async def send_to_user(user_id, message: dict):
             for s in active_connections.values():
                 s.difference_update(dead_sockets)
 
+async def broadcast_user_status(user_id, status: str):
+    try:
+        u_id = int(user_id)
+        msg_json = json.dumps({"type": "user_status", "userId": u_id, "status": status})
+        dead_sockets = set()
+        for uid, conns in list(active_connections.items()):
+            if uid != u_id:
+                for ws in list(conns):
+                    try:
+                        await ws.send_text(msg_json)
+                    except Exception:
+                        dead_sockets.add(ws)
+        if dead_sockets:
+            for s in active_connections.values():
+                s.difference_update(dead_sockets)
+    except Exception as e:
+        print("broadcast_user_status error:", e)
+
 def db_save_message(sender_id, receiver_id, listing_id, content, message_type):
     conn = get_connection()
     try:
@@ -309,7 +327,11 @@ async def api_users(request):
         try:
             cursor = conn.cursor()
             cursor.execute("SELECT id, name, email, role, phone_masked, avatar, bio FROM users ORDER BY id ASC")
-            users = [serialize_dict(dict(row)) for row in cursor.fetchall()]
+            users = []
+            for row in cursor.fetchall():
+                d = serialize_dict(dict(row))
+                d["is_online"] = (int(d["id"]) in active_connections and bool(active_connections[int(d["id"])]))
+                users.append(d)
             cursor.close()
             return users
         finally:
@@ -715,10 +737,13 @@ async def websocket_signaling(websocket: WebSocket):
                 if payload:
                     authenticated_user_id = payload["sub"]
                     await register_ws(authenticated_user_id, websocket)
+                    online_uids = [int(uid) for uid, conns in active_connections.items() if conns]
                     await websocket.send_text(json.dumps({
                         "type": "authenticated",
-                        "userId": authenticated_user_id
+                        "userId": authenticated_user_id,
+                        "onlineUsers": online_uids
                     }))
+                    await broadcast_user_status(authenticated_user_id, "online")
                 else:
                     await websocket.send_text(json.dumps({
                         "type": "auth_error",
@@ -727,6 +752,16 @@ async def websocket_signaling(websocket: WebSocket):
 
             elif msg_type == "ping":
                 await websocket.send_text(json.dumps({"type": "pong"}))
+
+            elif msg_type == "typing":
+                target_user_id = data.get("targetUserId")
+                is_typing = bool(data.get("isTyping", False))
+                if target_user_id and authenticated_user_id:
+                    await send_to_user(target_user_id, {
+                        "type": "typing",
+                        "senderId": authenticated_user_id,
+                        "isTyping": is_typing
+                    })
 
             elif msg_type == "chat_message":
                 if not authenticated_user_id:
@@ -831,12 +866,12 @@ async def websocket_signaling(websocket: WebSocket):
                     data["senderId"] = authenticated_user_id
                     await send_to_user(target_id, data)
 
-    except WebSocketDisconnect:
+    except (WebSocketDisconnect, Exception):
         if authenticated_user_id:
             await unregister_ws(authenticated_user_id, websocket)
-    except Exception:
-        if authenticated_user_id:
-            await unregister_ws(authenticated_user_id, websocket)
+            u_id = int(authenticated_user_id)
+            if u_id not in active_connections or not active_connections[u_id]:
+                await broadcast_user_status(u_id, "offline")
 
 # --- Static Frontend Serving ---
 

@@ -29,6 +29,10 @@ let activeTab = 'feed';
 let allListings = [];
 let allUsers = [];
 let activeChatPeer = null;
+let onlineUserIds = new Set();
+let peerTypingMap = new Map(); // peerId -> timeoutId
+let myTypingTimeout = null;
+let isCurrentlyTypingSent = false;
 
 // --- WebRTC State ---
 let peerConnection = null;
@@ -1244,6 +1248,11 @@ async function loadUsersList() {
     ]);
 
     allUsers = await usersRes.json();
+    if (Array.isArray(allUsers)) {
+      allUsers.forEach(u => {
+        if (u.is_online) onlineUserIds.add(Number(u.id));
+      });
+    }
     if (convRes && convRes.ok) {
       recentConversations = await convRes.json();
     } else {
@@ -1348,11 +1357,16 @@ function renderContactsList() {
 function renderChatRowHtml(u, isArchivedView = false) {
   const isMine = currentUser && (u.last_message_sender_id === Number(currentUser.id));
   const timeFormatted = formatChatTime(u.last_message_time);
+  const isOnline = onlineUserIds.has(Number(u.id));
+  const isTyping = peerTypingMap.has(Number(u.id));
   
-  let previewText = 'Tap to start conversation...';
+  let previewText = isOnline ? '<span class="text-emerald-600 font-medium">Online</span>' : '<span class="text-slate-400">Offline</span>';
   let previewPrefix = '';
 
-  if (u.last_message) {
+  if (isTyping) {
+    previewPrefix = '';
+    previewText = '<span class="text-emerald-600 font-semibold italic flex items-center gap-1">typing<span class="inline-flex"><span class="animate-bounce">.</span><span class="animate-bounce [animation-delay:0.15s]">.</span><span class="animate-bounce [animation-delay:0.3s]">.</span></span></span>';
+  } else if (u.last_message) {
     if (isMine) {
       previewPrefix = '<span class="text-emerald-600 mr-0.5 font-bold">✓✓</span> ';
     }
@@ -1376,7 +1390,7 @@ function renderChatRowHtml(u, isArchivedView = false) {
         <div class="relative shrink-0">
           <img src="${u.avatar}" onerror="this.src='https://ui-avatars.com/api/?name=${encodeURIComponent(u.name)}&background=075E54&color=fff'" 
                class="w-11 h-11 rounded-full object-cover border border-slate-200">
-          <span class="absolute bottom-0 right-0 w-3 h-3 rounded-full bg-emerald-500 border-2 border-white"></span>
+          <span class="absolute bottom-0 right-0 w-3 h-3 rounded-full ${isOnline ? 'bg-emerald-500 ring-2 ring-white' : 'bg-slate-300 ring-2 ring-white'}"></span>
         </div>
         <div class="min-w-0 flex-1">
           <div class="flex items-center justify-between mb-0.5">
@@ -1586,6 +1600,54 @@ function closeArchivedChatsModal() {
   if (modal) modal.classList.add('hidden');
 }
 
+function handleIncomingPeerTyping(senderId, isTyping) {
+  if (peerTypingMap.has(senderId)) {
+    clearTimeout(peerTypingMap.get(senderId));
+    peerTypingMap.delete(senderId);
+  }
+
+  if (isTyping) {
+    const timer = setTimeout(() => {
+      peerTypingMap.delete(senderId);
+      updateChatPeerStatusUI();
+      renderContactsList();
+    }, 3500);
+    peerTypingMap.set(senderId, timer);
+  }
+
+  updateChatPeerStatusUI();
+  renderContactsList();
+}
+
+function updateChatPeerStatusUI() {
+  if (!activeChatPeer) return;
+
+  const container = document.getElementById('chat-peer-status-container');
+  if (!container) return;
+
+  const peerId = Number(activeChatPeer.id);
+  const isTyping = peerTypingMap.has(peerId);
+  const isOnline = onlineUserIds.has(peerId);
+
+  const countEl = document.getElementById('chat-peer-msg-count');
+  const msgCountText = countEl ? countEl.textContent : '0 messages';
+
+  if (isTyping) {
+    container.innerHTML = `
+      <span class="text-white font-medium italic flex items-center gap-1 tracking-wide">
+        typing<span class="inline-flex"><span class="animate-bounce">.</span><span class="animate-bounce [animation-delay:0.15s]">.</span><span class="animate-bounce [animation-delay:0.3s]">.</span></span>
+      </span>
+    `;
+  } else {
+    container.innerHTML = `
+      <span id="chat-peer-status-dot" class="w-1.5 h-1.5 rounded-full ${isOnline ? 'bg-emerald-400' : 'bg-emerald-100/40'} shrink-0"></span>
+      <span id="chat-peer-status-text" class="font-normal truncate">${isOnline ? 'online' : 'offline'}</span>
+      <span class="text-white/40">•</span>
+      <span id="chat-peer-msg-count" class="font-medium text-emerald-100/90 truncate">${msgCountText || '0 messages'}</span>
+    `;
+  }
+}
+
 let chatSyncInterval = null;
 
 async function startChatWithUser(userId, name, avatar, role) {
@@ -1597,6 +1659,7 @@ async function startChatWithUser(userId, name, avatar, role) {
   if (peerName) peerName.textContent = name;
   if (peerAvatar) peerAvatar.src = avatar;
   if (peerRole) peerRole.textContent = role;
+  updateChatPeerStatusUI();
 
   const chatView = document.getElementById('active-chat-view');
   if (chatView) chatView.classList.remove('hidden');
@@ -1630,6 +1693,7 @@ async function startChatWithUser(userId, name, avatar, role) {
 }
 
 function closeActiveChat() {
+  stopMyTyping();
   clearInterval(chatSyncInterval);
   chatSyncInterval = null;
   const chatView = document.getElementById('active-chat-view');
@@ -1651,6 +1715,7 @@ async function fetchChatMessages(otherUserId) {
     if (countEl) {
       countEl.textContent = `${messages.length} ${messages.length === 1 ? 'message' : 'messages'}`;
     }
+    updateChatPeerStatusUI();
 
     const conv = recentConversations.find(c => Number(c.peer_id) === Number(otherUserId));
     if (conv) {
@@ -2098,15 +2163,54 @@ function handleChatInputTyping() {
   const input = document.getElementById('chat-input');
   const btnMic = document.getElementById('btn-voice-record');
   const btnSend = document.getElementById('btn-send-message');
-  if (!input || !btnMic || !btnSend) return;
+  if (!input) return;
 
-  if (input.value.trim().length > 0) {
-    btnMic.classList.add('hidden');
-    btnSend.classList.remove('hidden');
-  } else {
-    btnMic.classList.remove('hidden');
-    btnSend.classList.add('hidden');
+  const hasText = input.value.trim().length > 0;
+  if (btnMic && btnSend) {
+    if (hasText) {
+      btnMic.classList.add('hidden');
+      btnSend.classList.remove('hidden');
+    } else {
+      btnMic.classList.remove('hidden');
+      btnSend.classList.add('hidden');
+    }
   }
+
+  // Live WebSocket typing indicator
+  if (activeChatPeer && ws && ws.readyState === WebSocket.OPEN) {
+    if (hasText) {
+      if (!isCurrentlyTypingSent) {
+        isCurrentlyTypingSent = true;
+        try {
+          ws.send(JSON.stringify({
+            type: 'typing',
+            targetUserId: activeChatPeer.id,
+            isTyping: true
+          }));
+        } catch(e){}
+      }
+      clearTimeout(myTypingTimeout);
+      myTypingTimeout = setTimeout(() => {
+        stopMyTyping();
+      }, 2500);
+    } else {
+      stopMyTyping();
+    }
+  }
+}
+
+function stopMyTyping() {
+  clearTimeout(myTypingTimeout);
+  if (isCurrentlyTypingSent && activeChatPeer && ws && ws.readyState === WebSocket.OPEN) {
+    try {
+      ws.send(JSON.stringify({
+        type: 'typing',
+        targetUserId: activeChatPeer.id,
+        isTyping: false
+      }));
+    } catch(e){}
+  }
+  isCurrentlyTypingSent = false;
 }
 
 async function toggleVoiceRecording() {
@@ -2326,7 +2430,10 @@ function renderCallsContactsList() {
   container.innerHTML = otherUsers.map(u => `
     <div class="p-3 flex items-center justify-between">
       <div class="flex items-center gap-3">
-        <img src="${u.avatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100'}" class="w-10 h-10 rounded-full object-cover">
+        <div class="relative shrink-0">
+          <img src="${u.avatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100'}" class="w-10 h-10 rounded-full object-cover">
+          <span class="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full ${onlineUserIds.has(Number(u.id)) ? 'bg-emerald-500 ring-2 ring-white' : 'bg-slate-300 ring-2 ring-white'}"></span>
+        </div>
         <div>
           <h4 class="font-bold text-xs text-slate-800">${u.name}</h4>
           <p class="text-[10px] text-slate-500 capitalize">${u.role} • ${u.phone_masked}</p>
@@ -3010,7 +3117,39 @@ function initWebSocket() {
       switch (data.type) {
         case 'authenticated':
           console.log('WS Authenticated for User ID:', data.userId);
+          if (Array.isArray(data.onlineUsers)) {
+            onlineUserIds = new Set(data.onlineUsers.map(Number));
+            renderContactsList();
+            updateChatPeerStatusUI();
+          }
           break;
+
+        case 'online_users':
+          if (Array.isArray(data.userIds)) {
+            onlineUserIds = new Set(data.userIds.map(Number));
+            renderContactsList();
+            updateChatPeerStatusUI();
+          }
+          break;
+
+        case 'user_status': {
+          const uid = Number(data.userId);
+          if (data.status === 'online') {
+            onlineUserIds.add(uid);
+          } else {
+            onlineUserIds.delete(uid);
+            peerTypingMap.delete(uid);
+          }
+          renderContactsList();
+          updateChatPeerStatusUI();
+          break;
+        }
+
+        case 'typing': {
+          const senderId = Number(data.senderId);
+          handleIncomingPeerTyping(senderId, Boolean(data.isTyping));
+          break;
+        }
 
         case 'pong':
           break;
@@ -3021,6 +3160,7 @@ function initWebSocket() {
 
           const msgSenderId = Number(msg.sender_id);
           const msgReceiverId = Number(msg.receiver_id);
+          handleIncomingPeerTyping(msgSenderId, false);
           const activePeerId = activeChatPeer ? Number(activeChatPeer.id) : null;
           const myId = currentUser ? Number(currentUser.id) : null;
 
@@ -3040,6 +3180,7 @@ function initWebSocket() {
               const currentTotal = document.querySelectorAll('#chat-messages-container > div[id^="msg-bubble-"]').length;
               countEl.textContent = `${currentTotal} ${currentTotal === 1 ? 'message' : 'messages'}`;
             }
+            updateChatPeerStatusUI();
           }
 
           // Real-time update of recent conversations list & unread counters
