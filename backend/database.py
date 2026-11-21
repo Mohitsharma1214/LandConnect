@@ -2,6 +2,7 @@ import os
 import hashlib
 import json
 import psycopg2
+from psycopg2.pool import ThreadedConnectionPool
 from psycopg2.extras import RealDictCursor
 from dotenv import load_dotenv
 
@@ -11,13 +12,56 @@ load_dotenv(ENV_PATH)
 
 DATABASE_URL = os.environ.get("DATABASE_URL", "").strip()
 
+_pool = None
+
+class PooledConnectionWrapper:
+    def __init__(self, conn, pool):
+        self._conn = conn
+        self._pool = pool
+        self._closed = False
+
+    def close(self):
+        if not self._closed:
+            self._closed = True
+            try:
+                self._conn.rollback()
+            except Exception:
+                pass
+            try:
+                self._pool.putconn(self._conn)
+            except Exception:
+                pass
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
+
+    def __getattr__(self, name):
+        return getattr(self._conn, name)
+
 def get_connection():
+    global _pool
     if not DATABASE_URL:
         raise ValueError("DATABASE_URL is not set. Please provide your Neon DB PostgreSQL connection string in backend/.env")
     
-    # Neon DB requires sslmode=require
-    conn = psycopg2.connect(DATABASE_URL, cursor_factory=RealDictCursor)
-    return conn
+    if _pool is None:
+        try:
+            _pool = ThreadedConnectionPool(minconn=1, maxconn=15, dsn=DATABASE_URL, cursor_factory=RealDictCursor)
+        except Exception as e:
+            print(f"Warning during connection pool init: {e}")
+            _pool = None
+
+    if _pool is not None:
+        try:
+            conn = _pool.getconn()
+            return PooledConnectionWrapper(conn, _pool)
+        except Exception as e:
+            print(f"Pool getconn fallback: {e}")
+            return psycopg2.connect(DATABASE_URL, cursor_factory=RealDictCursor)
+
+    return psycopg2.connect(DATABASE_URL, cursor_factory=RealDictCursor)
 
 def hash_password(password: str, salt: str = "landconnect_salt_2026") -> str:
     return hashlib.sha256((password + salt).encode('utf-8')).hexdigest()

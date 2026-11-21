@@ -4,8 +4,16 @@ const API_BASE = window.location.origin;
 let WS_URL = `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/ws`;
 
 // --- State Variables ---
-let currentUser = null;
 let currentToken = localStorage.getItem('landconnect_token') || null;
+let currentUser = null;
+try {
+  const cachedUserStr = localStorage.getItem('landconnect_user');
+  if (cachedUserStr) {
+    currentUser = JSON.parse(cachedUserStr);
+  }
+} catch (e) {
+  currentUser = null;
+}
 let selectedRoleForReg = 'buyer';
 let ws = null;
 let activeTab = 'feed';
@@ -106,16 +114,24 @@ document.addEventListener('DOMContentLoaded', async () => {
   updateSavedCounterUI();
 
   if (currentToken) {
-    // Optimistically show main app immediately (zero flicker)
-    showMainApp();
-    loadListings();
-    loadUsersList();
-    initWebSocket();
-
-    const valid = await fetchUserProfile();
-    if (!valid) {
-      handleLogoutSilent();
+    // If cached user exists, apply role UI instantly (zero flash)
+    if (currentUser) {
+      applyUserRoleUI();
     }
+    showMainApp();
+
+    // Fetch listings, users, and user profile concurrently
+    Promise.all([
+      loadListings(),
+      loadUsersList(),
+      fetchUserProfile()
+    ]).then(([_, __, valid]) => {
+      if (valid === false && !currentUser) {
+        handleLogoutSilent();
+      }
+    });
+
+    initWebSocket();
   } else {
     showAuthScreen();
   }
@@ -125,6 +141,7 @@ function handleLogoutSilent() {
   currentToken = null;
   currentUser = null;
   localStorage.removeItem('landconnect_token');
+  localStorage.removeItem('landconnect_user');
   document.documentElement.classList.remove('user-has-session');
   if (ws) {
     try { ws.close(); } catch(e){}
@@ -240,13 +257,15 @@ async function submitLogin(e) {
       currentToken = data.token;
       currentUser = data.user;
       localStorage.setItem('landconnect_token', currentToken);
+      localStorage.setItem('landconnect_user', JSON.stringify(currentUser));
+      applyUserRoleUI();
       showAuthFeedback('Login successful! Welcome to LandConnect.', false);
       setTimeout(async () => {
         showMainApp();
-        await loadListings();
-        await loadUsersList();
+        loadListings();
+        loadUsersList();
         initWebSocket();
-      }, 500);
+      }, 300);
     } else {
       showAuthFeedback(data.error || 'Invalid credentials. Please verify your email and password.');
     }
@@ -279,13 +298,15 @@ async function submitRegister(e) {
       currentToken = data.token;
       currentUser = data.user;
       localStorage.setItem('landconnect_token', currentToken);
+      localStorage.setItem('landconnect_user', JSON.stringify(currentUser));
+      applyUserRoleUI();
       showAuthFeedback(`Account created successfully as ${role.toUpperCase()}! Entering app...`, false);
       setTimeout(async () => {
         showMainApp();
-        await loadListings();
-        await loadUsersList();
+        loadListings();
+        loadUsersList();
         initWebSocket();
-      }, 700);
+      }, 350);
     } else {
       showAuthFeedback(data.error || 'Registration failed.');
     }
@@ -312,6 +333,7 @@ function confirmSignOut() {
   currentToken = null;
   currentUser = null;
   localStorage.removeItem('landconnect_token');
+  localStorage.removeItem('landconnect_user');
   document.documentElement.classList.remove('user-has-session');
   if (ws) {
     try { ws.close(); } catch(e){}
@@ -331,23 +353,35 @@ async function fetchUserProfile() {
     });
     if (res.ok) {
       currentUser = await res.json();
+      localStorage.setItem('landconnect_user', JSON.stringify(currentUser));
+      applyUserRoleUI();
       return true;
+    } else if (res.status === 401) {
+      return false;
     }
-    return false;
+    return true;
   } catch (err) {
-    console.error('Error fetching profile:', err);
-    return false;
+    console.warn('Error fetching profile:', err);
+    return currentUser ? true : false;
   }
 }
 
 function applyUserRoleUI() {
   if (!currentUser) return;
 
+  const role = (currentUser.role || 'buyer').toLowerCase();
+  const roleDisplay = role.charAt(0).toUpperCase() + role.slice(1);
+  const defaultAvatar = `https://ui-avatars.com/api/?name=${encodeURIComponent(currentUser.name || 'User')}&background=075E54&color=fff`;
+  const avatarSrc = currentUser.avatar || defaultAvatar;
+
   // Header
   const roleText = document.getElementById('header-role-text');
   const avatarImg = document.getElementById('header-avatar');
-  if (roleText) roleText.textContent = currentUser.role;
-  if (avatarImg && currentUser.avatar) avatarImg.src = currentUser.avatar;
+  if (roleText) roleText.textContent = roleDisplay;
+  if (avatarImg) {
+    avatarImg.src = avatarSrc;
+    avatarImg.onerror = () => { avatarImg.src = defaultAvatar; };
+  }
 
   // Profile Tab
   const pName = document.getElementById('profile-card-name');
@@ -356,16 +390,19 @@ function applyUserRoleUI() {
   const pPhone = document.getElementById('profile-card-phone');
   const pAvatar = document.getElementById('profile-card-avatar');
   
-  if (pName) pName.textContent = currentUser.name;
-  if (pEmail) pEmail.textContent = currentUser.email;
-  if (pPhone) pPhone.textContent = `Phone: ${currentUser.phone_masked} (Protected)`;
-  if (pAvatar && currentUser.avatar) pAvatar.src = currentUser.avatar;
+  if (pName) pName.textContent = currentUser.name || 'User Name';
+  if (pEmail) pEmail.textContent = currentUser.email || 'user@example.com';
+  if (pPhone) pPhone.textContent = `Phone: ${currentUser.phone_masked || '+91 98*** **321'} (Protected)`;
+  if (pAvatar) {
+    pAvatar.src = avatarSrc;
+    pAvatar.onerror = () => { pAvatar.src = defaultAvatar; };
+  }
 
   if (pRole) {
-    pRole.textContent = currentUser.role;
+    pRole.textContent = role.toUpperCase();
     pRole.className = `text-[10px] px-2.5 py-0.5 rounded-full font-bold uppercase tracking-wider ${
-      currentUser.role === 'buyer' ? 'bg-blue-100 text-blue-700' :
-      currentUser.role === 'seller' ? 'bg-emerald-100 text-emerald-700' :
+      role === 'buyer' ? 'bg-blue-100 text-blue-700' :
+      role === 'seller' ? 'bg-emerald-100 text-emerald-700' :
       'bg-purple-100 text-purple-700'
     }`;
   }
@@ -377,13 +414,13 @@ function applyUserRoleUI() {
   const floatingPostBtn = document.getElementById('floating-post-btn');
   const permPostStatus = document.getElementById('perm-post-status');
 
-  const canPost = (currentUser.role === 'seller' || currentUser.role === 'broker');
+  const canPost = (role === 'seller' || role === 'broker');
   const myPropertiesSection = document.getElementById('my-properties-section');
 
   if (canPost) {
     if (bannerPostBtn) bannerPostBtn.classList.remove('hidden');
     if (floatingPostBtn) floatingPostBtn.classList.remove('hidden');
-    if (bannerTitle) bannerTitle.textContent = `${currentUser.role.toUpperCase()} MODE: LISTING MANAGEMENT`;
+    if (bannerTitle) bannerTitle.textContent = `${role.toUpperCase()} MODE: LISTING MANAGEMENT`;
     if (bannerDesc) bannerDesc.textContent = `You are authorized to list land parcels, manage prices, and field buyer calls.`;
     if (permPostStatus) {
       permPostStatus.innerHTML = '<i data-lucide="check" class="w-3.5 h-3.5 text-emerald-500"></i> Authorized';
@@ -431,8 +468,11 @@ function switchTab(tabId) {
     renderMapParcelsSelector();
     updateMapCard(selectedMapListing || allListings[0]);
   }
-  if (tabId === 'profile' && (currentUser?.role === 'seller' || currentUser?.role === 'broker')) {
-    loadMyListings();
+  if (tabId === 'profile') {
+    applyUserRoleUI();
+    if (currentUser?.role === 'seller' || currentUser?.role === 'broker') {
+      loadMyListings();
+    }
   }
   if (window.lucide) lucide.createIcons();
 }
