@@ -1628,14 +1628,33 @@ function handleIncomingPeerTyping(senderId, isTyping) {
   if (isTyping) {
     const timer = setTimeout(() => {
       peerTypingMap.delete(senderId);
-      updateChatPeerStatusUI();
+      updateFloatingTypingUI();
       renderContactsList();
     }, 3500);
     peerTypingMap.set(senderId, timer);
   }
 
-  updateChatPeerStatusUI();
+  updateFloatingTypingUI();
   renderContactsList();
+}
+
+function updateFloatingTypingUI() {
+  const floatingEl = document.getElementById('chat-floating-typing');
+  const floatingAvatar = document.getElementById('chat-floating-typing-avatar');
+  if (!floatingEl) return;
+
+  if (activeChatPeer && peerTypingMap.has(Number(activeChatPeer.id))) {
+    if (floatingAvatar) {
+      floatingAvatar.src = activeChatPeer.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(activeChatPeer.name)}&background=075E54&color=fff`;
+    }
+    floatingEl.classList.remove('hidden');
+    const container = document.getElementById('chat-messages-container');
+    if (container && (container.scrollHeight - container.scrollTop - container.clientHeight < 120)) {
+      container.scrollTop = container.scrollHeight;
+    }
+  } else {
+    floatingEl.classList.add('hidden');
+  }
 }
 
 function updateChatPeerStatusUI() {
@@ -1645,26 +1664,18 @@ function updateChatPeerStatusUI() {
   if (!container) return;
 
   const peerId = Number(activeChatPeer.id);
-  const isTyping = peerTypingMap.has(peerId);
   const isOnline = onlineUserIds.has(peerId);
 
   const countEl = document.getElementById('chat-peer-msg-count');
   const msgCountText = countEl ? countEl.textContent : '0 messages';
 
-  if (isTyping) {
-    container.innerHTML = `
-      <span class="text-white font-medium italic flex items-center gap-1 tracking-wide">
-        typing<span class="inline-flex"><span class="animate-bounce">.</span><span class="animate-bounce [animation-delay:0.15s]">.</span><span class="animate-bounce [animation-delay:0.3s]">.</span></span>
-      </span>
-    `;
-  } else {
-    container.innerHTML = `
-      <span id="chat-peer-status-dot" class="w-1.5 h-1.5 rounded-full ${isOnline ? 'bg-emerald-400' : 'bg-emerald-100/40'} shrink-0"></span>
-      <span id="chat-peer-status-text" class="font-normal truncate">${isOnline ? 'online' : 'offline'}</span>
-      <span class="text-white/40">•</span>
-      <span id="chat-peer-msg-count" class="font-medium text-emerald-100/90 truncate">${msgCountText || '0 messages'}</span>
-    `;
-  }
+  // In WhatsApp, the status bar consistently displays online/offline
+  container.innerHTML = `
+    <span id="chat-peer-status-dot" class="w-1.5 h-1.5 rounded-full ${isOnline ? 'bg-emerald-400' : 'bg-emerald-100/40'} shrink-0"></span>
+    <span id="chat-peer-status-text" class="font-normal truncate">${isOnline ? 'online' : 'offline'}</span>
+    <span class="text-white/40">•</span>
+    <span id="chat-peer-msg-count" class="font-medium text-emerald-100/90 truncate">${msgCountText || '0 messages'}</span>
+  `;
 }
 
 let chatSyncInterval = null;
@@ -1683,6 +1694,7 @@ async function startChatWithUser(userId, name, avatar, role) {
   if (peerAvatar) peerAvatar.src = avatar;
   if (peerRole) peerRole.textContent = role;
   updateChatPeerStatusUI();
+  updateFloatingTypingUI();
 
   // Instant render: if cached, show immediately with 0ms delay; otherwise show clean encrypted state
   if (chatMessagesCache.has(targetId)) {
@@ -1751,6 +1763,7 @@ function closeActiveChat() {
   const messagesContainer = document.getElementById('chat-messages-container');
   if (messagesContainer) messagesContainer.innerHTML = '';
   activeChatPeer = null;
+  updateFloatingTypingUI();
   loadUsersList();
 }
 
