@@ -158,6 +158,11 @@ def init_db():
     );
     """)
 
+    cursor.execute("""
+    CREATE INDEX IF NOT EXISTS idx_messages_conv ON messages (sender_id, receiver_id, created_at);
+    CREATE INDEX IF NOT EXISTS idx_messages_rev ON messages (receiver_id, sender_id, created_at);
+    """)
+
     conn.commit()
 
     # Seed Default Demonstration Personas if users table is empty

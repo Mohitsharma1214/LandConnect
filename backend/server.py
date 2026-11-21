@@ -459,32 +459,34 @@ async def api_send_message(request):
         return JSONResponse({"error": "Receiver and message content are required."}, status_code=400)
     
     conn = get_connection()
-    cursor = conn.cursor()
-    cursor.execute("""
-        INSERT INTO messages (sender_id, receiver_id, listing_id, content, message_type)
-        VALUES (%s, %s, %s, %s, %s)
-        RETURNING id;
-    """, (sender_id, receiver_id, listing_id, content, message_type))
-    msg_id = cursor.fetchone()["id"]
-    conn.commit()
+    try:
+        cursor = conn.cursor()
+        cursor.execute("""
+            INSERT INTO messages (sender_id, receiver_id, listing_id, content, message_type)
+            VALUES (%s, %s, %s, %s, %s)
+            RETURNING id;
+        """, (sender_id, receiver_id, listing_id, content, message_type))
+        msg_id = cursor.fetchone()["id"]
+        conn.commit()
 
-    cursor.execute("""
-        SELECT m.*, 
-               s.name as sender_name, s.avatar as sender_avatar,
-               l.title as listing_title, l.price as listing_price, l.images as listing_images
-        FROM messages m
-        JOIN users s ON m.sender_id = s.id
-        LEFT JOIN listings l ON m.listing_id = l.id
-        WHERE m.id = %s
-    """, (msg_id,))
-    msg_data = serialize_dict(dict(cursor.fetchone()))
-    if msg_data.get("listing_images"):
-        try:
-            msg_data["listing_images"] = json.loads(msg_data["listing_images"]) if isinstance(msg_data["listing_images"], str) else msg_data["listing_images"]
-        except Exception:
-            msg_data["listing_images"] = []
-    cursor.close()
-    conn.close()
+        cursor.execute("""
+            SELECT m.*, 
+                   s.name as sender_name, s.avatar as sender_avatar,
+                   l.title as listing_title, l.price as listing_price, l.images as listing_images
+            FROM messages m
+            JOIN users s ON m.sender_id = s.id
+            LEFT JOIN listings l ON m.listing_id = l.id
+            WHERE m.id = %s
+        """, (msg_id,))
+        msg_data = serialize_dict(dict(cursor.fetchone()))
+        if msg_data.get("listing_images"):
+            try:
+                msg_data["listing_images"] = json.loads(msg_data["listing_images"]) if isinstance(msg_data["listing_images"], str) else msg_data["listing_images"]
+            except Exception:
+                msg_data["listing_images"] = []
+        cursor.close()
+    finally:
+        conn.close()
 
     # Dispatch via WebSocket
     await send_to_user(receiver_id, {

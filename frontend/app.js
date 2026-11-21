@@ -1257,6 +1257,117 @@ async function fetchChatMessages(otherUserId) {
   }
 }
 
+function generateMessageHtml(m, isPending = false) {
+  const isMine = currentUser && (m.sender_id === currentUser.id);
+  const time = m.created_at ? new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const bubbleId = m.tempId ? `msg-bubble-${m.tempId}` : `msg-bubble-${m.id}`;
+  const statusId = m.tempId ? `msg-status-${m.tempId}` : `msg-status-${m.id}`;
+
+  let messageContentHtml = `<p class="leading-relaxed select-text">${m.content}</p>`;
+
+  // If meeting room invitation
+  if (m.message_type === 'meeting') {
+    messageContentHtml = `
+      <div class="bg-gradient-to-r from-wa-teal to-wa-tealDark text-white p-3 rounded-2xl shadow-md border border-emerald-400/30 my-1">
+        <div class="flex items-center gap-2 mb-1">
+          <div class="w-6 h-6 rounded-full bg-emerald-400/20 flex items-center justify-center">
+            <i data-lucide="video" class="w-3.5 h-3.5 text-emerald-300"></i>
+          </div>
+          <span class="font-bold text-xs">Virtual Meeting Room</span>
+        </div>
+        <p class="text-[11px] text-emerald-100">${m.content}</p>
+        <button onclick="joinMeetingRoomFromChat()" class="mt-2.5 w-full bg-wa-green hover:bg-emerald-400 text-wa-tealDark py-1.5 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 shadow transition">
+          <i data-lucide="video" class="w-3.5 h-3.5"></i>
+          Join Video Meeting
+        </button>
+      </div>
+    `;
+  } 
+  // If WhatsApp voice note audio message
+  else if (m.message_type === 'audio') {
+    const playId = m.id || m.tempId || 'temp';
+    messageContentHtml = `
+      <div class="flex items-center gap-2.5 py-1 min-w-[200px]">
+        <button onclick="toggleVoicePlayback('${playId}', '${escapeQuotes(m.content)}')" id="voice-btn-${playId}" 
+                class="w-8 h-8 rounded-full bg-wa-teal hover:bg-wa-tealDark text-white flex items-center justify-center flex-shrink-0 shadow transition">
+          <i data-lucide="play" id="voice-icon-${playId}" class="w-4 h-4 ml-0.5"></i>
+        </button>
+        <div class="flex-1 space-y-1">
+          <div class="flex items-center gap-0.5 h-4 cursor-pointer" onclick="toggleVoicePlayback('${playId}', '${escapeQuotes(m.content)}')">
+            <span class="w-1 bg-wa-teal/60 rounded-full h-2"></span>
+            <span class="w-1 bg-wa-teal/80 rounded-full h-3.5"></span>
+            <span class="w-1 bg-wa-teal rounded-full h-4"></span>
+            <span class="w-1 bg-wa-teal/80 rounded-full h-2.5"></span>
+            <span class="w-1 bg-wa-teal rounded-full h-4"></span>
+            <span class="w-1 bg-wa-teal/90 rounded-full h-3"></span>
+            <span class="w-1 bg-wa-teal rounded-full h-4"></span>
+            <span class="w-1 bg-wa-teal/70 rounded-full h-2.5"></span>
+            <span class="w-1 bg-wa-teal/50 rounded-full h-1.5"></span>
+            <span class="w-1 bg-wa-teal/80 rounded-full h-3"></span>
+            <span class="w-1 bg-wa-teal rounded-full h-4"></span>
+            <span class="w-1 bg-wa-teal/60 rounded-full h-2"></span>
+          </div>
+          <div class="flex justify-between items-center text-[9px] text-slate-500 font-mono">
+            <span id="voice-timer-${playId}">Voice Note</span>
+            <span class="text-[9px] text-wa-teal font-sans font-semibold">🎙️ Audio</span>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+  // If property inquiry attachment
+  else if (m.listing_title) {
+    const img = (m.listing_images && m.listing_images.length > 0) ? m.listing_images[0] : 'https://images.unsplash.com/photo-1500382017468-9049fed747ef?w=200';
+    messageContentHtml = `
+      <div class="mb-2 p-2 bg-slate-50 border border-slate-200 rounded-xl cursor-pointer hover:bg-slate-100 transition shadow-sm" onclick="openPropertyDetails(${m.listing_id})">
+        <div class="flex items-center gap-2">
+          <img src="${img}" onerror="this.onerror=null; this.src='https://images.unsplash.com/photo-1500382017468-9049fed747ef?w=200';" class="w-12 h-12 rounded-lg object-cover flex-shrink-0 border border-slate-200">
+          <div class="truncate">
+            <div class="text-[9px] uppercase font-bold text-wa-teal">Land Parcel Inquiry</div>
+            <div class="font-bold text-xs text-slate-800 truncate">${m.listing_title}</div>
+            <div class="text-[10px] text-emerald-700 font-extrabold">₹${Number(m.listing_price || 0).toLocaleString('en-IN')}</div>
+          </div>
+        </div>
+      </div>
+      <p class="leading-relaxed select-text">${m.content}</p>
+    `;
+  }
+
+  const checkIcon = isPending
+    ? `<span id="${statusId}"><i data-lucide="check" class="w-3 h-3 text-slate-400"></i></span>`
+    : `<span id="${statusId}"><i data-lucide="check-check" class="w-3 h-3 text-emerald-600"></i></span>`;
+
+  return `
+    <div id="${bubbleId}" class="flex ${isMine ? 'justify-end' : 'justify-start'}">
+      <div class="max-w-[78%] rounded-2xl px-3.5 py-2 shadow-sm text-xs ${
+        isMine 
+          ? 'bg-wa-outgoingBubble text-slate-800 rounded-tr-none' 
+          : 'bg-white text-slate-800 rounded-tl-none'
+      }">
+        ${messageContentHtml}
+        <div class="text-[9px] text-slate-400 text-right mt-1 flex items-center justify-end gap-1">
+          <span>${time}</span>
+          ${isMine ? checkIcon : ''}
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function appendMessageToChat(m, isPending = false) {
+  const container = document.getElementById('chat-messages-container');
+  if (!container) return;
+
+  const placeholder = container.querySelector('.text-center.py-6');
+  if (placeholder) {
+    placeholder.remove();
+  }
+
+  container.insertAdjacentHTML('beforeend', generateMessageHtml(m, isPending));
+  container.scrollTop = container.scrollHeight;
+  if (window.lucide) lucide.createIcons();
+}
+
 function renderChatMessages(messages) {
   const container = document.getElementById('chat-messages-container');
   if (!container) return;
@@ -1272,96 +1383,7 @@ function renderChatMessages(messages) {
     return;
   }
 
-  container.innerHTML = messages.map(m => {
-    const isMine = currentUser && m.sender_id === currentUser.id;
-    const time = new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-
-    let messageContentHtml = `<p class="leading-relaxed select-text">${m.content}</p>`;
-
-    // If meeting room invitation
-    if (m.message_type === 'meeting') {
-      messageContentHtml = `
-        <div class="bg-gradient-to-r from-wa-teal to-wa-tealDark text-white p-3 rounded-2xl shadow-md border border-emerald-400/30 my-1">
-          <div class="flex items-center gap-2 mb-1">
-            <div class="w-6 h-6 rounded-full bg-emerald-400/20 flex items-center justify-center">
-              <i data-lucide="video" class="w-3.5 h-3.5 text-emerald-300"></i>
-            </div>
-            <span class="font-bold text-xs">Virtual Meeting Room</span>
-          </div>
-          <p class="text-[11px] text-emerald-100">${m.content}</p>
-          <button onclick="joinMeetingRoomFromChat()" class="mt-2.5 w-full bg-wa-green hover:bg-emerald-400 text-wa-tealDark py-1.5 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 shadow transition">
-            <i data-lucide="video" class="w-3.5 h-3.5"></i>
-            Join Video Meeting
-          </button>
-        </div>
-      `;
-    } 
-    // If WhatsApp voice note audio message
-    else if (m.message_type === 'audio') {
-      messageContentHtml = `
-        <div class="flex items-center gap-2.5 py-1 min-w-[200px]">
-          <button onclick="toggleVoicePlayback(${m.id}, '${escapeQuotes(m.content)}')" id="voice-btn-${m.id}" 
-                  class="w-8 h-8 rounded-full bg-wa-teal hover:bg-wa-tealDark text-white flex items-center justify-center flex-shrink-0 shadow transition">
-            <i data-lucide="play" id="voice-icon-${m.id}" class="w-4 h-4 ml-0.5"></i>
-          </button>
-          <div class="flex-1 space-y-1">
-            <div class="flex items-center gap-0.5 h-4 cursor-pointer" onclick="toggleVoicePlayback(${m.id}, '${escapeQuotes(m.content)}')">
-              <span class="w-1 bg-wa-teal/60 rounded-full h-2"></span>
-              <span class="w-1 bg-wa-teal/80 rounded-full h-3.5"></span>
-              <span class="w-1 bg-wa-teal rounded-full h-4"></span>
-              <span class="w-1 bg-wa-teal/80 rounded-full h-2.5"></span>
-              <span class="w-1 bg-wa-teal rounded-full h-4"></span>
-              <span class="w-1 bg-wa-teal/90 rounded-full h-3"></span>
-              <span class="w-1 bg-wa-teal rounded-full h-4"></span>
-              <span class="w-1 bg-wa-teal/70 rounded-full h-2.5"></span>
-              <span class="w-1 bg-wa-teal/50 rounded-full h-1.5"></span>
-              <span class="w-1 bg-wa-teal/80 rounded-full h-3"></span>
-              <span class="w-1 bg-wa-teal rounded-full h-4"></span>
-              <span class="w-1 bg-wa-teal/60 rounded-full h-2"></span>
-            </div>
-            <div class="flex justify-between items-center text-[9px] text-slate-500 font-mono">
-              <span id="voice-timer-${m.id}">Voice Note</span>
-              <span class="text-[9px] text-wa-teal font-sans font-semibold">🎙️ Audio</span>
-            </div>
-          </div>
-        </div>
-      `;
-    }
-    // If property inquiry attachment
-    else if (m.listing_title) {
-      const img = (m.listing_images && m.listing_images.length > 0) ? m.listing_images[0] : 'https://images.unsplash.com/photo-1500382017468-9049fed747ef?w=200';
-      messageContentHtml = `
-        <div class="mb-2 p-2 bg-slate-50 border border-slate-200 rounded-xl cursor-pointer hover:bg-slate-100 transition shadow-sm" onclick="openPropertyDetails(${m.listing_id})">
-          <div class="flex items-center gap-2">
-            <img src="${img}" class="w-12 h-12 rounded-lg object-cover flex-shrink-0 border border-slate-200">
-            <div class="truncate">
-              <div class="text-[9px] uppercase font-bold text-wa-teal">Land Parcel Inquiry</div>
-              <div class="font-bold text-xs text-slate-800 truncate">${m.listing_title}</div>
-              <div class="text-[10px] text-emerald-700 font-extrabold">₹${Number(m.listing_price || 0).toLocaleString('en-IN')}</div>
-            </div>
-          </div>
-        </div>
-        <p class="leading-relaxed select-text">${m.content}</p>
-      `;
-    }
-
-    return `
-      <div class="flex ${isMine ? 'justify-end' : 'justify-start'}">
-        <div class="max-w-[78%] rounded-2xl px-3.5 py-2 shadow-sm text-xs ${
-          isMine 
-            ? 'bg-wa-outgoingBubble text-slate-800 rounded-tr-none' 
-            : 'bg-white text-slate-800 rounded-tl-none'
-        }">
-          ${messageContentHtml}
-          <div class="text-[9px] text-slate-400 text-right mt-1 flex items-center justify-end gap-1">
-            <span>${time}</span>
-            ${isMine ? '<i data-lucide="check-check" class="w-3 h-3 text-emerald-600"></i>' : ''}
-          </div>
-        </div>
-      </div>
-    `;
-  }).join('');
-
+  container.innerHTML = messages.map(m => generateMessageHtml(m, false)).join('');
   container.scrollTop = container.scrollHeight;
   if (window.lucide) lucide.createIcons();
 }
@@ -1380,8 +1402,25 @@ async function attachListingInChat() {
   hideAttachmentMenu();
   if (allListings.length === 0 || !activeChatPeer) return;
 
-  const item = allListings[0]; // Attach prime listing
+  const item = allListings[0];
   const inquiryText = `Inquiring about this verified land plot: ${item.title}`;
+
+  // Optimistic UI
+  const tempId = 'temp_inq_' + Date.now();
+  const optimisticMsg = {
+    id: tempId,
+    tempId: tempId,
+    sender_id: currentUser ? currentUser.id : 0,
+    receiver_id: activeChatPeer.id,
+    listing_id: item.id,
+    listing_title: item.title,
+    listing_price: item.price,
+    listing_images: item.images,
+    content: inquiryText,
+    message_type: 'property_inquiry',
+    created_at: new Date().toISOString()
+  };
+  appendMessageToChat(optimisticMsg, true);
 
   try {
     const res = await fetch(`${API_BASE}/api/messages`, {
@@ -1397,7 +1436,15 @@ async function attachListingInChat() {
         message_type: 'property_inquiry'
       })
     });
-    await fetchChatMessages(activeChatPeer.id);
+    const savedMsg = await res.json();
+    if (savedMsg.id) {
+      const statusEl = document.getElementById(`msg-status-${tempId}`);
+      if (statusEl) {
+        statusEl.id = `msg-status-${savedMsg.id}`;
+        statusEl.innerHTML = '<i data-lucide="check-check" class="w-3 h-3 text-emerald-600"></i>';
+        if (window.lucide) lucide.createIcons();
+      }
+    }
   } catch (err) {
     console.error('Error attaching listing:', err);
   }
@@ -1408,6 +1455,19 @@ async function createMeetingRoom() {
   if (!activeChatPeer) return;
 
   const meetingMsg = `Meeting Room started for live property discussion. Tap to join encrypted video session.`;
+
+  // Optimistic UI
+  const tempId = 'temp_meet_' + Date.now();
+  const optimisticMsg = {
+    id: tempId,
+    tempId: tempId,
+    sender_id: currentUser ? currentUser.id : 0,
+    receiver_id: activeChatPeer.id,
+    content: meetingMsg,
+    message_type: 'meeting',
+    created_at: new Date().toISOString()
+  };
+  appendMessageToChat(optimisticMsg, true);
 
   try {
     await fetch(`${API_BASE}/api/messages`, {
@@ -1422,8 +1482,7 @@ async function createMeetingRoom() {
         message_type: 'meeting'
       })
     });
-    await fetchChatMessages(activeChatPeer.id);
-    // Automatically launch video call
+    // Launch video call immediately
     triggerCallFromChat('video');
   } catch (err) {
     console.error('Error creating meeting room:', err);
@@ -1444,6 +1503,19 @@ async function sendChatMessage() {
   input.value = '';
   handleChatInputTyping();
 
+  // Optimistic instant render: 0ms delay!
+  const tempId = 'temp_' + Date.now();
+  const optimisticMsg = {
+    id: tempId,
+    tempId: tempId,
+    sender_id: currentUser ? currentUser.id : 0,
+    receiver_id: activeChatPeer.id,
+    content: content,
+    message_type: 'text',
+    created_at: new Date().toISOString()
+  };
+  appendMessageToChat(optimisticMsg, true);
+
   try {
     const res = await fetch(`${API_BASE}/api/messages`, {
       method: 'POST',
@@ -1457,9 +1529,24 @@ async function sendChatMessage() {
       })
     });
     const savedMsg = await res.json();
-    await fetchChatMessages(activeChatPeer.id);
+    if (savedMsg.id) {
+      const statusEl = document.getElementById(`msg-status-${tempId}`);
+      if (statusEl) {
+        statusEl.id = `msg-status-${savedMsg.id}`;
+        statusEl.innerHTML = '<i data-lucide="check-check" class="w-3 h-3 text-emerald-600"></i>';
+        if (window.lucide) lucide.createIcons();
+      }
+      const bubbleEl = document.getElementById(`msg-bubble-${tempId}`);
+      if (bubbleEl) {
+        bubbleEl.id = `msg-bubble-${savedMsg.id}`;
+      }
+    }
   } catch (err) {
     console.error('Error sending message:', err);
+    const statusEl = document.getElementById(`msg-status-${tempId}`);
+    if (statusEl) {
+      statusEl.innerHTML = '<span class="text-rose-500 font-bold" title="Failed to deliver">⚠️</span>';
+    }
   }
 }
 
@@ -1569,8 +1656,21 @@ async function stopAndSendVoiceRecording() {
     reader.onloadend = async () => {
       const base64Audio = reader.result;
 
+      // Optimistic Voice Note render (0ms delay)
+      const tempId = 'temp_audio_' + Date.now();
+      const optimisticMsg = {
+        id: tempId,
+        tempId: tempId,
+        sender_id: currentUser ? currentUser.id : 0,
+        receiver_id: activeChatPeer.id,
+        content: base64Audio,
+        message_type: 'audio',
+        created_at: new Date().toISOString()
+      };
+      appendMessageToChat(optimisticMsg, true);
+
       try {
-        await fetch(`${API_BASE}/api/messages`, {
+        const res = await fetch(`${API_BASE}/api/messages`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -1582,7 +1682,15 @@ async function stopAndSendVoiceRecording() {
             message_type: 'audio'
           })
         });
-        await fetchChatMessages(activeChatPeer.id);
+        const savedMsg = await res.json();
+        if (savedMsg.id) {
+          const statusEl = document.getElementById(`msg-status-${tempId}`);
+          if (statusEl) {
+            statusEl.id = `msg-status-${savedMsg.id}`;
+            statusEl.innerHTML = '<i data-lucide="check-check" class="w-3 h-3 text-emerald-600"></i>';
+            if (window.lucide) lucide.createIcons();
+          }
+        }
       } catch (err) {
         console.error('Error sending audio message:', err);
       }
@@ -2210,8 +2318,11 @@ function initWebSocket() {
           break;
 
         case 'new_message':
-          if (activeChatPeer && data.message.sender_id === activeChatPeer.id) {
-            await fetchChatMessages(activeChatPeer.id);
+          if (activeChatPeer && (data.message.sender_id === activeChatPeer.id || data.message.receiver_id === activeChatPeer.id)) {
+            const existing = document.getElementById(`msg-bubble-${data.message.id}`);
+            if (!existing) {
+              appendMessageToChat(data.message, false);
+            }
           } else {
             const badge = document.getElementById('chats-badge');
             if (badge) badge.classList.remove('hidden');
