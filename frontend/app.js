@@ -1615,13 +1615,18 @@ async function startChatWithUser(userId, name, avatar, role) {
   switchTab('chats');
   if (window.lucide) lucide.createIcons();
 
-  // Background active sync polling every 1500ms
+  // Background active sync polling
   clearInterval(chatSyncInterval);
+  let pollCounter = 0;
   chatSyncInterval = setInterval(() => {
     if (activeChatPeer && Number(activeChatPeer.id) === Number(userId) && currentToken) {
-      syncChatMessages(userId);
+      pollCounter++;
+      const isWsLive = ws && ws.readyState === WebSocket.OPEN;
+      if (!isWsLive || pollCounter % 5 === 0) {
+        syncChatMessages(userId);
+      }
     }
-  }, 1500);
+  }, 3000);
 }
 
 function closeActiveChat() {
@@ -2043,34 +2048,34 @@ async function sendChatMessage() {
     sender_avatar: currentUser ? currentUser.avatar : ''
   };
 
-  // 1. INSTANT WEBSOCKET DISPATCH (1-5ms to receiver!)
+  // 1. INSTANT WEBSOCKET DISPATCH (0ms to receiver!)
   let wsSent = false;
   if (ws && ws.readyState === WebSocket.OPEN) {
     try {
       ws.send(JSON.stringify(payload));
       wsSent = true;
     } catch (e) {
-      console.warn('WS send failed, using HTTP:', e);
+      console.warn('WS send failed, using HTTP fallback:', e);
     }
   }
 
-  // 2. HTTP POST persistence
-  try {
-    const res = await fetch(`${API_BASE}/api/messages`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${currentToken}`
-      },
-      body: JSON.stringify(payload)
-    });
-    const savedMsg = await res.json();
-    if (savedMsg.id) {
-      updateMessageStatus(tempId, savedMsg.id);
-    }
-  } catch (err) {
-    if (!wsSent) {
-      console.error('Error sending message:', err);
+  // 2. HTTP POST fallback only if WebSocket wasn't connected
+  if (!wsSent) {
+    try {
+      const res = await fetch(`${API_BASE}/api/messages`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${currentToken}`
+        },
+        body: JSON.stringify(payload)
+      });
+      const savedMsg = await res.json();
+      if (savedMsg.id) {
+        updateMessageStatus(tempId, savedMsg.id);
+      }
+    } catch (err) {
+      console.error('Error sending message fallback:', err);
       const statusEl = document.getElementById(`msg-status-${tempId}`);
       if (statusEl) {
         statusEl.innerHTML = '<span class="text-rose-500 font-bold" title="Failed to deliver">⚠️</span>';
@@ -2629,7 +2634,10 @@ async function initiateDirectCall(targetUserId, targetName, targetAvatar, target
   }
 }
 
+let pendingIceCandidates = [];
+
 function setupPeerConnection() {
+  pendingIceCandidates = [];
   peerConnection = new RTCPeerConnection(rtcConfig);
 
   if (localStream) {
@@ -2650,6 +2658,20 @@ function setupPeerConnection() {
     }
   };
 
+  peerConnection.onconnectionstatechange = () => {
+    console.log('Peer connection state:', peerConnection.connectionState);
+    const statusEl = document.getElementById('audio-placeholder-status');
+    const avatarEl = document.getElementById('call-avatar');
+    if (peerConnection.connectionState === 'connected') {
+      if (statusEl) statusEl.textContent = 'In-Call • Encrypted HD Audio';
+      if (avatarEl) avatarEl.classList.remove('animate-pulse');
+    } else if (peerConnection.connectionState === 'connecting') {
+      if (statusEl) statusEl.textContent = 'Connecting Secure In-App Audio...';
+    } else if (peerConnection.connectionState === 'failed' || peerConnection.connectionState === 'disconnected') {
+      if (statusEl) statusEl.textContent = 'Reconnecting...';
+    }
+  };
+
   peerConnection.onicecandidate = (event) => {
     if (event.candidate && ws && ws.readyState === WebSocket.OPEN && activeCallTargetId) {
       ws.send(JSON.stringify({
@@ -2661,18 +2683,37 @@ function setupPeerConnection() {
   };
 }
 
+async function drainPendingIceCandidates() {
+  if (!peerConnection || !peerConnection.remoteDescription) return;
+  while (pendingIceCandidates.length > 0) {
+    const cand = pendingIceCandidates.shift();
+    try {
+      await peerConnection.addIceCandidate(new RTCIceCandidate(cand));
+    } catch (e) {
+      console.warn('Queued ICE candidate application error:', e);
+    }
+  }
+}
+
 function showCallModal(peerName, peerAvatar, peerRole, callType) {
   const modal = document.getElementById('call-modal');
   const nameEl = document.getElementById('call-peer-name');
   const roleEl = document.getElementById('call-role-badge');
   const avatarEl = document.getElementById('call-avatar');
   const audioPlaceholder = document.getElementById('audio-call-placeholder');
+  const audioPlaceholderName = document.getElementById('audio-placeholder-name');
+  const audioPlaceholderStatus = document.getElementById('audio-placeholder-status');
   const localVideoBox = document.getElementById('local-video-container');
 
   if (modal) modal.classList.remove('hidden');
   if (nameEl) nameEl.textContent = peerName;
   if (roleEl) roleEl.textContent = `${peerRole} • Protected Contact`;
-  if (avatarEl) avatarEl.src = peerAvatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100';
+  if (avatarEl) {
+    avatarEl.src = peerAvatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100';
+    avatarEl.classList.add('animate-pulse');
+  }
+  if (audioPlaceholderName) audioPlaceholderName.textContent = peerName;
+  if (audioPlaceholderStatus) audioPlaceholderStatus.textContent = 'Connecting In-App Audio...';
 
   if (callType === 'audio') {
     if (audioPlaceholder) audioPlaceholder.classList.remove('hidden');
@@ -3070,11 +3111,12 @@ function initWebSocket() {
         case 'webrtc_offer':
           if (!peerConnection) setupPeerConnection();
           await peerConnection.setRemoteDescription(new RTCSessionDescription(data.offer));
+          await drainPendingIceCandidates();
           const answer = await peerConnection.createAnswer();
           await peerConnection.setLocalDescription(answer);
           ws.send(JSON.stringify({
             type: 'webrtc_answer',
-            targetUserId: data.callerId || activeCallTargetId,
+            targetUserId: data.senderId || data.callerId || activeCallTargetId,
             answer: answer
           }));
           break;
@@ -3082,15 +3124,20 @@ function initWebSocket() {
         case 'webrtc_answer':
           if (peerConnection) {
             await peerConnection.setRemoteDescription(new RTCSessionDescription(data.answer));
+            await drainPendingIceCandidates();
           }
           break;
 
         case 'ice_candidate':
-          if (peerConnection && data.candidate) {
-            try {
-              await peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate));
-            } catch (err) {
-              console.error('Error adding ICE candidate:', err);
+          if (data.candidate) {
+            if (peerConnection && peerConnection.remoteDescription && peerConnection.remoteDescription.type) {
+              try {
+                await peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate));
+              } catch (err) {
+                console.error('Error adding ICE candidate:', err);
+              }
+            } else {
+              pendingIceCandidates.push(data.candidate);
             }
           }
           break;

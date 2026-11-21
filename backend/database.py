@@ -18,8 +18,6 @@ def is_connection_alive(conn):
     try:
         if conn.closed != 0:
             return False
-        with conn.cursor() as cur:
-            cur.execute("SELECT 1;")
         return True
     except Exception:
         return False
