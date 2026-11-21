@@ -320,6 +320,14 @@
             </button>
           </div>
 
+          <!-- Quick Utilities Bar: Land Calculator & Filter Pill -->
+          <div class="flex items-center justify-between gap-2">
+            <button onclick="openLandCalculatorModal()" class="flex-1 bg-white hover:bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold text-slate-700 flex items-center justify-center gap-1.5 shadow-sm transition">
+              <i data-lucide="calculator" class="w-3.5 h-3.5 text-wa-teal"></i>
+              <span>Land Area & Stamp Duty Calculator</span>
+            </button>
+          </div>
+
           <!-- Listings Cards List with WhatsApp Style Skeleton Shimmer -->
           <div id="listings-container" class="space-y-3">
             <!-- Skeleton Card 1 -->
@@ -444,7 +452,10 @@
                   </p>
                 </div>
               </div>
-              <div class="flex items-center gap-2">
+              <div class="flex items-center gap-1.5">
+                <button onclick="createMeetingRoom()" title="Start Virtual Meeting Room" class="p-2 rounded-full hover:bg-white/10 text-emerald-100 hover:text-white transition">
+                  <i data-lucide="users" class="w-4 h-4"></i>
+                </button>
                 <button onclick="triggerCallFromChat('video')" title="Start Video Call" class="p-2 rounded-full hover:bg-white/10 text-emerald-100 hover:text-white transition">
                   <i data-lucide="video" class="w-5 h-5"></i>
                 </button>
@@ -456,16 +467,59 @@
 
             <div id="chat-messages-container" class="flex-1 p-3 overflow-y-auto space-y-2"></div>
 
-            <div class="bg-slate-100 p-2 flex items-center gap-2 border-t border-slate-200">
-              <button class="text-slate-500 hover:text-slate-700 p-1">
+            <!-- Attachment Menu Popup -->
+            <div id="attachment-menu" class="hidden absolute bottom-14 left-3 bg-white rounded-2xl shadow-xl border border-slate-200 p-2 z-40 text-xs w-52 space-y-1">
+              <button onclick="attachListingInChat()" class="w-full text-left p-2 rounded-xl hover:bg-slate-50 flex items-center gap-2 text-slate-700 font-semibold transition">
+                <div class="p-1.5 bg-emerald-100 text-wa-teal rounded-lg"><i data-lucide="map-pin" class="w-3.5 h-3.5"></i></div>
+                <span>Attach Land Parcel</span>
+              </button>
+              <button onclick="createMeetingRoom()" class="w-full text-left p-2 rounded-xl hover:bg-slate-50 flex items-center gap-2 text-slate-700 font-semibold transition">
+                <div class="p-1.5 bg-blue-100 text-blue-700 rounded-lg"><i data-lucide="video" class="w-3.5 h-3.5"></i></div>
+                <span>Virtual Meeting Room</span>
+              </button>
+            </div>
+
+            <div class="bg-slate-100 p-2 flex items-center gap-2 border-t border-slate-200 relative">
+              <button onclick="toggleAttachmentMenu()" id="btn-chat-attach" class="text-slate-500 hover:text-slate-700 p-1 flex-shrink-0">
                 <i data-lucide="paperclip" class="w-5 h-5"></i>
               </button>
-              <input type="text" id="chat-input" placeholder="Type a message..." 
-                     class="flex-1 bg-white rounded-full px-4 py-2 text-xs border border-slate-200 outline-none focus:border-wa-teal"
-                     onkeydown="if(event.key === 'Enter') sendChatMessage()">
-              <button onclick="sendChatMessage()" class="bg-wa-teal hover:bg-wa-tealDark text-white p-2.5 rounded-full transition shadow-sm">
-                <i data-lucide="send" class="w-4 h-4"></i>
-              </button>
+              
+              <!-- Standard Typing Bar -->
+              <div id="chat-input-row" class="flex-1 flex items-center gap-2">
+                <input type="text" id="chat-input" placeholder="Type a message..." 
+                       class="flex-1 bg-white rounded-full px-4 py-2 text-xs border border-slate-200 outline-none focus:border-wa-teal"
+                       oninput="handleChatInputTyping()"
+                       onkeydown="if(event.key === 'Enter') sendChatMessage()">
+                
+                <!-- Voice Note Mic Button (default when input empty) -->
+                <button id="btn-voice-record" onclick="toggleVoiceRecording()" title="Record Voice Note" 
+                        class="bg-wa-teal hover:bg-wa-tealDark text-white p-2.5 rounded-full transition shadow-sm flex-shrink-0">
+                  <i data-lucide="mic" class="w-4 h-4"></i>
+                </button>
+                
+                <!-- Send Text Button (visible when text entered) -->
+                <button id="btn-send-message" onclick="sendChatMessage()" title="Send Message" 
+                        class="hidden bg-wa-teal hover:bg-wa-tealDark text-white p-2.5 rounded-full transition shadow-sm flex-shrink-0">
+                  <i data-lucide="send" class="w-4 h-4"></i>
+                </button>
+              </div>
+
+              <!-- Live Voice Recording UI (active during recording) -->
+              <div id="chat-recording-row" class="hidden flex-1 flex items-center justify-between bg-white rounded-full px-3 py-1.5 border border-red-200 shadow-inner">
+                <div class="flex items-center gap-2 text-red-600">
+                  <span class="w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse"></span>
+                  <span id="recording-timer" class="font-bold text-xs font-mono">0:00</span>
+                  <span class="text-[10px] text-slate-400">Recording Audio...</span>
+                </div>
+                <div class="flex items-center gap-1.5">
+                  <button onclick="cancelVoiceRecording()" title="Discard recording" class="p-1.5 text-slate-400 hover:text-red-500 rounded-full transition">
+                    <i data-lucide="trash-2" class="w-4 h-4"></i>
+                  </button>
+                  <button onclick="stopAndSendVoiceRecording()" title="Send Voice Note" class="bg-wa-green hover:bg-emerald-500 text-wa-tealDark p-1.5 rounded-full font-bold shadow-sm transition">
+                    <i data-lucide="send" class="w-3.5 h-3.5"></i>
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         </section>
@@ -655,16 +709,19 @@
       </div>
 
       <div class="p-6 bg-slate-950/90 backdrop-blur-md flex items-center justify-around border-t border-white/10">
-        <button id="btn-toggle-mic" onclick="toggleMuteAudio()" class="p-3.5 rounded-full bg-white/10 hover:bg-white/20 text-white transition">
+        <button id="btn-toggle-mic" onclick="toggleMuteAudio()" class="p-3.5 rounded-full bg-white/10 hover:bg-white/20 text-white transition" title="Mute/Unmute Audio">
           <i data-lucide="mic" id="icon-mic" class="w-5 h-5"></i>
         </button>
-        <button id="btn-toggle-cam" onclick="toggleVideoCamera()" class="p-3.5 rounded-full bg-white/10 hover:bg-white/20 text-white transition">
+        <button id="btn-toggle-cam" onclick="toggleVideoCamera()" class="p-3.5 rounded-full bg-white/10 hover:bg-white/20 text-white transition" title="Camera On/Off">
           <i data-lucide="video" id="icon-cam" class="w-5 h-5"></i>
         </button>
-        <button onclick="toggleSpeaker()" class="p-3.5 rounded-full bg-white/10 hover:bg-white/20 text-white transition">
+        <button id="btn-toggle-screen" onclick="toggleScreenShare()" class="p-3.5 rounded-full bg-white/10 hover:bg-white/20 text-white transition" title="Share Screen / Document">
+          <i data-lucide="monitor" class="w-5 h-5"></i>
+        </button>
+        <button onclick="toggleSpeaker()" class="p-3.5 rounded-full bg-white/10 hover:bg-white/20 text-white transition" title="Speaker">
           <i data-lucide="volume-2" class="w-5 h-5"></i>
         </button>
-        <button onclick="endCurrentCall()" class="p-4 rounded-full bg-rose-600 hover:bg-rose-700 text-white shadow-xl transition transform hover:scale-105 active:scale-95">
+        <button onclick="endCurrentCall()" class="p-4 rounded-full bg-rose-600 hover:bg-rose-700 text-white shadow-xl transition transform hover:scale-105 active:scale-95" title="End Call">
           <i data-lucide="phone-off" class="w-6 h-6"></i>
         </button>
       </div>
@@ -840,6 +897,13 @@
             <div id="detail-features" class="flex flex-wrap gap-1.5"></div>
           </div>
 
+          <!-- Land Calculator Quick Trigger -->
+          <button id="btn-property-calculator" onclick="openLandCalculatorForActiveProperty()" 
+                  class="w-full bg-slate-50 hover:bg-slate-100 border border-slate-200 py-2 rounded-xl text-xs font-semibold text-slate-700 transition flex items-center justify-center gap-1.5 shadow-sm">
+            <i data-lucide="calculator" class="w-4 h-4 text-wa-teal"></i>
+            Calculate Stamp Duty, Registration & Loan EMI
+          </button>
+
           <!-- Owner / Broker Contact Box -->
           <div class="p-3 bg-gradient-to-r from-teal-50 to-emerald-50 rounded-2xl border border-emerald-200/80 space-y-2">
             <div class="flex items-center justify-between">
@@ -959,6 +1023,186 @@
             Save Listing Changes
           </button>
         </form>
+      </div>
+    </div>
+
+    <!-- ================= LAND & STAMP DUTY / EMI CALCULATOR MODAL ================= -->
+    <div id="calculator-modal" class="hidden absolute inset-0 bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+      <div class="bg-white w-full max-w-sm rounded-3xl overflow-hidden shadow-2xl flex flex-col max-h-[90vh]">
+        <!-- Header -->
+        <div class="bg-wa-teal text-white p-3.5 flex items-center justify-between">
+          <div class="flex items-center gap-2">
+            <i data-lucide="calculator" class="w-5 h-5 text-emerald-300"></i>
+            <div>
+              <h3 class="font-bold text-sm">Land & Finance Calculator</h3>
+              <p class="text-[10px] text-emerald-100">Area Conversions, Stamp Duty & EMI</p>
+            </div>
+          </div>
+          <button onclick="closeLandCalculatorModal()" class="text-white/80 hover:text-white p-1 rounded-full hover:bg-white/10 transition">
+            <i data-lucide="x" class="w-5 h-5"></i>
+          </button>
+        </div>
+
+        <!-- Calculator Tabs -->
+        <div class="flex border-b border-slate-200 bg-slate-50 text-xs font-semibold">
+          <button onclick="switchCalcTab('area')" id="calc-tab-btn-area" class="flex-1 py-2.5 text-center border-b-2 border-wa-teal text-wa-teal">
+            Area Units
+          </button>
+          <button onclick="switchCalcTab('stamp')" id="calc-tab-btn-stamp" class="flex-1 py-2.5 text-center border-b-2 border-transparent text-slate-500 hover:text-slate-800">
+            Stamp Duty
+          </button>
+          <button onclick="switchCalcTab('emi')" id="calc-tab-btn-emi" class="flex-1 py-2.5 text-center border-b-2 border-transparent text-slate-500 hover:text-slate-800">
+            Loan EMI
+          </button>
+        </div>
+
+        <!-- Body -->
+        <div class="p-4 overflow-y-auto space-y-4 text-xs flex-1">
+          <!-- TAB 1: AREA UNIT CONVERTER -->
+          <div id="calc-pane-area" class="space-y-3">
+            <div>
+              <label class="block text-slate-600 font-semibold mb-1">Enter Area Value</label>
+              <div class="flex gap-2">
+                <input type="number" id="calc-area-input" value="1" min="0.01" step="any"
+                       class="flex-1 border border-slate-200 rounded-xl px-3 py-2 outline-none focus:border-wa-teal font-bold text-slate-800"
+                       oninput="recalculateAreaUnits()">
+                <select id="calc-area-unit" onchange="recalculateAreaUnits()"
+                        class="bg-slate-100 border border-slate-200 rounded-xl px-2.5 py-2 text-slate-700 font-semibold outline-none">
+                  <option value="acre" selected>Acre</option>
+                  <option value="guntha">Guntha</option>
+                  <option value="cent">Cent</option>
+                  <option value="bigha">Bigha</option>
+                  <option value="sqyd">Sq. Yards (Gaj)</option>
+                  <option value="sqft">Sq. Feet</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="bg-slate-50 rounded-2xl p-3 border border-slate-200 space-y-2">
+              <div class="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Equivalent Land Measures</div>
+              
+              <div class="grid grid-cols-2 gap-2 text-xs">
+                <div class="bg-white p-2.5 rounded-xl border border-slate-100 shadow-sm">
+                  <div class="text-[10px] text-slate-500">Acre</div>
+                  <div id="unit-val-acre" class="font-extrabold text-slate-800 text-sm">1.0000</div>
+                </div>
+                <div class="bg-white p-2.5 rounded-xl border border-slate-100 shadow-sm">
+                  <div class="text-[10px] text-slate-500">Guntha (1/40 Acre)</div>
+                  <div id="unit-val-guntha" class="font-extrabold text-wa-teal text-sm">40.00</div>
+                </div>
+                <div class="bg-white p-2.5 rounded-xl border border-slate-100 shadow-sm">
+                  <div class="text-[10px] text-slate-500">Cent (1/100 Acre)</div>
+                  <div id="unit-val-cent" class="font-extrabold text-slate-800 text-sm">100.00</div>
+                </div>
+                <div class="bg-white p-2.5 rounded-xl border border-slate-100 shadow-sm">
+                  <div class="text-[10px] text-slate-500">Bigha (Standard)</div>
+                  <div id="unit-val-bigha" class="font-extrabold text-slate-800 text-sm">1.60</div>
+                </div>
+                <div class="bg-white p-2.5 rounded-xl border border-slate-100 shadow-sm">
+                  <div class="text-[10px] text-slate-500">Sq. Yards / Gaj</div>
+                  <div id="unit-val-sqyd" class="font-extrabold text-slate-800 text-sm">4,840</div>
+                </div>
+                <div class="bg-white p-2.5 rounded-xl border border-slate-100 shadow-sm">
+                  <div class="text-[10px] text-slate-500">Square Feet</div>
+                  <div id="unit-val-sqft" class="font-extrabold text-emerald-700 text-sm">43,560</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- TAB 2: STAMP DUTY & REGISTRATION -->
+          <div id="calc-pane-stamp" class="hidden space-y-3">
+            <div>
+              <label class="block text-slate-600 font-semibold mb-1">Land Consideration Price (₹)</label>
+              <input type="number" id="calc-stamp-price" value="7500000" step="50000" min="0"
+                     class="w-full border border-slate-200 rounded-xl px-3 py-2 outline-none focus:border-wa-teal font-bold text-slate-800"
+                     oninput="recalculateStampDuty()">
+            </div>
+
+            <div>
+              <label class="block text-slate-600 font-semibold mb-1">State Jurisdiction</label>
+              <select id="calc-stamp-state" onchange="recalculateStampDuty()"
+                      class="w-full bg-slate-100 border border-slate-200 rounded-xl px-3 py-2 text-slate-700 font-semibold outline-none">
+                <option value="KA" selected>Karnataka (5.6% Stamp + 1% Reg)</option>
+                <option value="MH">Maharashtra (6.0% Stamp + 1% Reg)</option>
+                <option value="TS">Telangana (6.0% Stamp + 0.5% Reg)</option>
+                <option value="TN">Tamil Nadu (7.0% Stamp + 4% Reg)</option>
+                <option value="DL">Delhi NCR (6.0% Stamp + 1% Reg)</option>
+              </select>
+            </div>
+
+            <div class="bg-slate-50 rounded-2xl p-3 border border-slate-200 space-y-2">
+              <div class="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Estimated Government Charges</div>
+              <div class="space-y-1.5 text-xs">
+                <div class="flex justify-between text-slate-600">
+                  <span>Stamp Duty:</span>
+                  <span id="stamp-duty-val" class="font-bold text-slate-800">₹4,20,000</span>
+                </div>
+                <div class="flex justify-between text-slate-600">
+                  <span>Registration Fee:</span>
+                  <span id="stamp-reg-val" class="font-bold text-slate-800">₹75,000</span>
+                </div>
+                <div class="flex justify-between text-slate-600">
+                  <span>Cess & Surcharge (2% of duty):</span>
+                  <span id="stamp-cess-val" class="font-bold text-slate-800">₹8,400</span>
+                </div>
+                <div class="pt-2 border-t border-slate-200 flex justify-between font-bold text-sm">
+                  <span class="text-slate-900">Total Land Outlay:</span>
+                  <span id="stamp-total-val" class="text-emerald-700 font-extrabold">₹80,03,400</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- TAB 3: LOAN EMI CALCULATOR -->
+          <div id="calc-pane-emi" class="hidden space-y-3">
+            <div>
+              <label class="block text-slate-600 font-semibold mb-1">Loan Amount (₹)</label>
+              <input type="number" id="calc-loan-amount" value="5000000" step="50000" min="0"
+                     class="w-full border border-slate-200 rounded-xl px-3 py-2 outline-none focus:border-wa-teal font-bold text-slate-800"
+                     oninput="recalculateEMI()">
+            </div>
+
+            <div class="grid grid-cols-2 gap-2">
+              <div>
+                <label class="block text-slate-600 font-semibold mb-1">Interest Rate (% p.a.)</label>
+                <input type="number" id="calc-loan-rate" value="8.5" step="0.1" min="1" max="25"
+                       class="w-full border border-slate-200 rounded-xl px-3 py-2 outline-none focus:border-wa-teal font-bold text-slate-800"
+                       oninput="recalculateEMI()">
+              </div>
+              <div>
+                <label class="block text-slate-600 font-semibold mb-1">Tenure (Years)</label>
+                <input type="number" id="calc-loan-tenure" value="15" step="1" min="1" max="30"
+                       class="w-full border border-slate-200 rounded-xl px-3 py-2 outline-none focus:border-wa-teal font-bold text-slate-800"
+                       oninput="recalculateEMI()">
+              </div>
+            </div>
+
+            <div class="bg-gradient-to-br from-emerald-50 to-teal-50 rounded-2xl p-3 border border-emerald-200 space-y-2">
+              <div class="text-[10px] uppercase font-bold text-emerald-800 tracking-wider">Estimated Monthly Repayment</div>
+              <div class="space-y-1.5 text-xs">
+                <div class="flex justify-between items-baseline pt-1">
+                  <span class="text-slate-600">Monthly EMI:</span>
+                  <span id="emi-monthly-val" class="text-base font-extrabold text-wa-teal">₹49,237 / mo</span>
+                </div>
+                <div class="flex justify-between text-slate-600">
+                  <span>Total Interest:</span>
+                  <span id="emi-interest-val" class="font-bold text-slate-800">₹38,62,654</span>
+                </div>
+                <div class="flex justify-between text-slate-600">
+                  <span>Total Repayment:</span>
+                  <span id="emi-total-val" class="font-bold text-slate-800">₹88,62,654</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="p-3 bg-slate-50 border-t border-slate-200 flex justify-end">
+          <button onclick="closeLandCalculatorModal()" class="bg-wa-teal hover:bg-wa-tealDark text-white px-5 py-2 rounded-xl font-bold transition shadow-sm text-xs">
+            Done
+          </button>
+        </div>
       </div>
     </div>
 

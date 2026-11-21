@@ -949,14 +949,83 @@ function renderChatMessages(messages) {
     const isMine = currentUser && m.sender_id === currentUser.id;
     const time = new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
+    let messageContentHtml = `<p class="leading-relaxed select-text">${m.content}</p>`;
+
+    // If meeting room invitation
+    if (m.message_type === 'meeting') {
+      messageContentHtml = `
+        <div class="bg-gradient-to-r from-wa-teal to-wa-tealDark text-white p-3 rounded-2xl shadow-md border border-emerald-400/30 my-1">
+          <div class="flex items-center gap-2 mb-1">
+            <div class="w-6 h-6 rounded-full bg-emerald-400/20 flex items-center justify-center">
+              <i data-lucide="video" class="w-3.5 h-3.5 text-emerald-300"></i>
+            </div>
+            <span class="font-bold text-xs">Virtual Meeting Room</span>
+          </div>
+          <p class="text-[11px] text-emerald-100">${m.content}</p>
+          <button onclick="joinMeetingRoomFromChat()" class="mt-2.5 w-full bg-wa-green hover:bg-emerald-400 text-wa-tealDark py-1.5 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 shadow transition">
+            <i data-lucide="video" class="w-3.5 h-3.5"></i>
+            Join Video Meeting
+          </button>
+        </div>
+      `;
+    } 
+    // If WhatsApp voice note audio message
+    else if (m.message_type === 'audio') {
+      messageContentHtml = `
+        <div class="flex items-center gap-2.5 py-1 min-w-[200px]">
+          <button onclick="toggleVoicePlayback(${m.id}, '${escapeQuotes(m.content)}')" id="voice-btn-${m.id}" 
+                  class="w-8 h-8 rounded-full bg-wa-teal hover:bg-wa-tealDark text-white flex items-center justify-center flex-shrink-0 shadow transition">
+            <i data-lucide="play" id="voice-icon-${m.id}" class="w-4 h-4 ml-0.5"></i>
+          </button>
+          <div class="flex-1 space-y-1">
+            <div class="flex items-center gap-0.5 h-4 cursor-pointer" onclick="toggleVoicePlayback(${m.id}, '${escapeQuotes(m.content)}')">
+              <span class="w-1 bg-wa-teal/60 rounded-full h-2"></span>
+              <span class="w-1 bg-wa-teal/80 rounded-full h-3.5"></span>
+              <span class="w-1 bg-wa-teal rounded-full h-4"></span>
+              <span class="w-1 bg-wa-teal/80 rounded-full h-2.5"></span>
+              <span class="w-1 bg-wa-teal rounded-full h-4"></span>
+              <span class="w-1 bg-wa-teal/90 rounded-full h-3"></span>
+              <span class="w-1 bg-wa-teal rounded-full h-4"></span>
+              <span class="w-1 bg-wa-teal/70 rounded-full h-2.5"></span>
+              <span class="w-1 bg-wa-teal/50 rounded-full h-1.5"></span>
+              <span class="w-1 bg-wa-teal/80 rounded-full h-3"></span>
+              <span class="w-1 bg-wa-teal rounded-full h-4"></span>
+              <span class="w-1 bg-wa-teal/60 rounded-full h-2"></span>
+            </div>
+            <div class="flex justify-between items-center text-[9px] text-slate-500 font-mono">
+              <span id="voice-timer-${m.id}">Voice Note</span>
+              <span class="text-[9px] text-wa-teal font-sans font-semibold">🎙️ Audio</span>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+    // If property inquiry attachment
+    else if (m.listing_title) {
+      const img = (m.listing_images && m.listing_images.length > 0) ? m.listing_images[0] : 'https://images.unsplash.com/photo-1500382017468-9049fed747ef?w=200';
+      messageContentHtml = `
+        <div class="mb-2 p-2 bg-slate-50 border border-slate-200 rounded-xl cursor-pointer hover:bg-slate-100 transition shadow-sm" onclick="openPropertyDetails(${m.listing_id})">
+          <div class="flex items-center gap-2">
+            <img src="${img}" class="w-12 h-12 rounded-lg object-cover flex-shrink-0 border border-slate-200">
+            <div class="truncate">
+              <div class="text-[9px] uppercase font-bold text-wa-teal">Land Parcel Inquiry</div>
+              <div class="font-bold text-xs text-slate-800 truncate">${m.listing_title}</div>
+              <div class="text-[10px] text-emerald-700 font-extrabold">₹${Number(m.listing_price || 0).toLocaleString('en-IN')}</div>
+            </div>
+          </div>
+        </div>
+        <p class="leading-relaxed select-text">${m.content}</p>
+      `;
+    }
+
     return `
       <div class="flex ${isMine ? 'justify-end' : 'justify-start'}">
-        <div class="max-w-[75%] rounded-2xl px-3.5 py-2 shadow-sm text-xs ${
+        <div class="max-w-[78%] rounded-2xl px-3.5 py-2 shadow-sm text-xs ${
           isMine 
             ? 'bg-wa-outgoingBubble text-slate-800 rounded-tr-none' 
             : 'bg-white text-slate-800 rounded-tl-none'
         }">
-          <p class="leading-relaxed select-text">${m.content}</p>
+          ${messageContentHtml}
           <div class="text-[9px] text-slate-400 text-right mt-1 flex items-center justify-end gap-1">
             <span>${time}</span>
             ${isMine ? '<i data-lucide="check-check" class="w-3 h-3 text-emerald-600"></i>' : ''}
@@ -970,12 +1039,83 @@ function renderChatMessages(messages) {
   if (window.lucide) lucide.createIcons();
 }
 
+function toggleAttachmentMenu() {
+  const menu = document.getElementById('attachment-menu');
+  if (menu) menu.classList.toggle('hidden');
+}
+
+function hideAttachmentMenu() {
+  const menu = document.getElementById('attachment-menu');
+  if (menu) menu.classList.add('hidden');
+}
+
+async function attachListingInChat() {
+  hideAttachmentMenu();
+  if (allListings.length === 0 || !activeChatPeer) return;
+
+  const item = allListings[0]; // Attach prime listing
+  const inquiryText = `Inquiring about this verified land plot: ${item.title}`;
+
+  try {
+    const res = await fetch(`${API_BASE}/api/messages`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${currentToken}`
+      },
+      body: JSON.stringify({
+        receiver_id: activeChatPeer.id,
+        listing_id: item.id,
+        content: inquiryText,
+        message_type: 'property_inquiry'
+      })
+    });
+    await fetchChatMessages(activeChatPeer.id);
+  } catch (err) {
+    console.error('Error attaching listing:', err);
+  }
+}
+
+async function createMeetingRoom() {
+  hideAttachmentMenu();
+  if (!activeChatPeer) return;
+
+  const meetingMsg = `Meeting Room started for live property discussion. Tap to join encrypted video session.`;
+
+  try {
+    await fetch(`${API_BASE}/api/messages`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${currentToken}`
+      },
+      body: JSON.stringify({
+        receiver_id: activeChatPeer.id,
+        content: meetingMsg,
+        message_type: 'meeting'
+      })
+    });
+    await fetchChatMessages(activeChatPeer.id);
+    // Automatically launch video call
+    triggerCallFromChat('video');
+  } catch (err) {
+    console.error('Error creating meeting room:', err);
+  }
+}
+
+function joinMeetingRoomFromChat() {
+  if (activeChatPeer) {
+    initiateDirectCall(activeChatPeer.id, activeChatPeer.name, activeChatPeer.avatar, activeChatPeer.role, 'video');
+  }
+}
+
 async function sendChatMessage() {
   const input = document.getElementById('chat-input');
   if (!input || !input.value.trim() || !activeChatPeer || !currentToken) return;
 
   const content = input.value.trim();
   input.value = '';
+  handleChatInputTyping();
 
   try {
     const res = await fetch(`${API_BASE}/api/messages`, {
@@ -993,6 +1133,197 @@ async function sendChatMessage() {
     await fetchChatMessages(activeChatPeer.id);
   } catch (err) {
     console.error('Error sending message:', err);
+  }
+}
+
+// ================= WHATSAPP VOICE NOTES (AUDIO MESSAGING) =================
+
+let mediaRecorder = null;
+let audioChunks = [];
+let recordingStream = null;
+let recordingTimerInterval = null;
+let recordingDuration = 0;
+let currentActiveAudio = null;
+let currentActiveAudioId = null;
+
+function handleChatInputTyping() {
+  const input = document.getElementById('chat-input');
+  const btnMic = document.getElementById('btn-voice-record');
+  const btnSend = document.getElementById('btn-send-message');
+  if (!input || !btnMic || !btnSend) return;
+
+  if (input.value.trim().length > 0) {
+    btnMic.classList.add('hidden');
+    btnSend.classList.remove('hidden');
+  } else {
+    btnMic.classList.remove('hidden');
+    btnSend.classList.add('hidden');
+  }
+}
+
+async function toggleVoiceRecording() {
+  const recordingRow = document.getElementById('chat-recording-row');
+  const inputRow = document.getElementById('chat-input-row');
+  const attachBtn = document.getElementById('btn-chat-attach');
+
+  try {
+    recordingStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    audioChunks = [];
+    recordingDuration = 0;
+
+    mediaRecorder = new MediaRecorder(recordingStream);
+    mediaRecorder.ondataavailable = (e) => {
+      if (e.data && e.data.size > 0) {
+        audioChunks.push(e.data);
+      }
+    };
+
+    mediaRecorder.start();
+
+    // Switch UI to recording bar
+    if (inputRow) inputRow.classList.add('hidden');
+    if (attachBtn) attachBtn.classList.add('opacity-40', 'pointer-events-none');
+    if (recordingRow) recordingRow.classList.remove('hidden');
+
+    const timerEl = document.getElementById('recording-timer');
+    if (timerEl) timerEl.textContent = '0:00';
+
+    clearInterval(recordingTimerInterval);
+    recordingTimerInterval = setInterval(() => {
+      recordingDuration++;
+      const mins = Math.floor(recordingDuration / 60);
+      const secs = recordingDuration % 60;
+      if (timerEl) {
+        timerEl.textContent = `${mins}:${secs < 10 ? '0' : ''}${secs}`;
+      }
+    }, 1000);
+
+    if (window.lucide) lucide.createIcons();
+  } catch (err) {
+    alert('Microphone access is required to record voice notes.');
+    console.warn('Microphone error:', err);
+  }
+}
+
+function cancelVoiceRecording() {
+  clearInterval(recordingTimerInterval);
+  if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+    try { mediaRecorder.stop(); } catch(e){}
+  }
+  if (recordingStream) {
+    recordingStream.getTracks().forEach(t => t.stop());
+    recordingStream = null;
+  }
+  audioChunks = [];
+  mediaRecorder = null;
+
+  const recordingRow = document.getElementById('chat-recording-row');
+  const inputRow = document.getElementById('chat-input-row');
+  const attachBtn = document.getElementById('btn-chat-attach');
+
+  if (recordingRow) recordingRow.classList.add('hidden');
+  if (inputRow) inputRow.classList.remove('hidden');
+  if (attachBtn) attachBtn.classList.remove('opacity-40', 'pointer-events-none');
+  if (window.lucide) lucide.createIcons();
+}
+
+async function stopAndSendVoiceRecording() {
+  if (!mediaRecorder || !activeChatPeer) {
+    cancelVoiceRecording();
+    return;
+  }
+
+  clearInterval(recordingTimerInterval);
+
+  mediaRecorder.onstop = async () => {
+    const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+    const reader = new FileReader();
+    reader.readAsDataURL(audioBlob);
+    reader.onloadend = async () => {
+      const base64Audio = reader.result;
+
+      try {
+        await fetch(`${API_BASE}/api/messages`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${currentToken}`
+          },
+          body: JSON.stringify({
+            receiver_id: activeChatPeer.id,
+            content: base64Audio,
+            message_type: 'audio'
+          })
+        });
+        await fetchChatMessages(activeChatPeer.id);
+      } catch (err) {
+        console.error('Error sending audio message:', err);
+      }
+    };
+
+    if (recordingStream) {
+      recordingStream.getTracks().forEach(t => t.stop());
+      recordingStream = null;
+    }
+  };
+
+  mediaRecorder.stop();
+
+  const recordingRow = document.getElementById('chat-recording-row');
+  const inputRow = document.getElementById('chat-input-row');
+  const attachBtn = document.getElementById('btn-chat-attach');
+
+  if (recordingRow) recordingRow.classList.add('hidden');
+  if (inputRow) inputRow.classList.remove('hidden');
+  if (attachBtn) attachBtn.classList.remove('opacity-40', 'pointer-events-none');
+  if (window.lucide) lucide.createIcons();
+}
+
+function toggleVoicePlayback(msgId, audioSrc) {
+  if (currentActiveAudio && currentActiveAudioId === msgId) {
+    if (currentActiveAudio.paused) {
+      currentActiveAudio.play();
+      updateVoiceBtnIcon(msgId, true);
+    } else {
+      currentActiveAudio.pause();
+      updateVoiceBtnIcon(msgId, false);
+    }
+    return;
+  }
+
+  if (currentActiveAudio) {
+    currentActiveAudio.pause();
+    if (currentActiveAudioId) updateVoiceBtnIcon(currentActiveAudioId, false);
+    currentActiveAudio = null;
+    currentActiveAudioId = null;
+  }
+
+  try {
+    currentActiveAudio = new Audio(audioSrc);
+    currentActiveAudioId = msgId;
+    updateVoiceBtnIcon(msgId, true);
+
+    currentActiveAudio.onended = () => {
+      updateVoiceBtnIcon(msgId, false);
+      currentActiveAudio = null;
+      currentActiveAudioId = null;
+    };
+    currentActiveAudio.onerror = () => {
+      updateVoiceBtnIcon(msgId, false);
+      currentActiveAudio = null;
+      currentActiveAudioId = null;
+    };
+    currentActiveAudio.play();
+  } catch (err) {
+    console.error('Audio playback error:', err);
+  }
+}
+
+function updateVoiceBtnIcon(msgId, isPlaying) {
+  const icon = document.getElementById(`voice-icon-${msgId}`);
+  if (icon) {
+    icon.setAttribute('data-lucide', isPlaying ? 'pause' : 'play');
+    if (window.lucide) lucide.createIcons();
   }
 }
 
@@ -1140,6 +1471,142 @@ function createSimulatedMediaStream(callType) {
   return stream;
 }
 
+// ================= SYNTHESIZED RINGTONES & AUDIO EFFECTS =================
+
+let ringtoneAudioCtx = null;
+let ringtoneOscillators = [];
+
+function playOutgoingRing() {
+  stopRingtone();
+  try {
+    ringtoneAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const now = ringtoneAudioCtx.currentTime;
+
+    const osc1 = ringtoneAudioCtx.createOscillator();
+    const osc2 = ringtoneAudioCtx.createOscillator();
+    const gain = ringtoneAudioCtx.createGain();
+
+    osc1.frequency.value = 440;
+    osc2.frequency.value = 480;
+
+    osc1.connect(gain);
+    osc2.connect(gain);
+    gain.connect(ringtoneAudioCtx.destination);
+
+    // Standard ringback cadence: 1.5s ring, 3s silence
+    gain.gain.setValueAtTime(0, now);
+    for (let i = 0; i < 6; i++) {
+      const start = now + (i * 4.5);
+      gain.gain.setValueAtTime(0.08, start);
+      gain.gain.setValueAtTime(0, start + 1.6);
+    }
+
+    osc1.start(now);
+    osc2.start(now);
+    ringtoneOscillators = [osc1, osc2];
+  } catch (err) {
+    console.log('Outgoing ringtone suppressed:', err);
+  }
+}
+
+function playIncomingRing() {
+  stopRingtone();
+  try {
+    ringtoneAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const now = ringtoneAudioCtx.currentTime;
+
+    const osc = ringtoneAudioCtx.createOscillator();
+    const gain = ringtoneAudioCtx.createGain();
+
+    osc.type = 'sine';
+    osc.connect(gain);
+    gain.connect(ringtoneAudioCtx.destination);
+
+    // WhatsApp style pleasant incoming chime
+    gain.gain.setValueAtTime(0, now);
+    for (let i = 0; i < 8; i++) {
+      const t = now + (i * 2.0);
+      osc.frequency.setValueAtTime(587.33, t); // D5
+      osc.frequency.setValueAtTime(659.25, t + 0.15); // E5
+      osc.frequency.setValueAtTime(880.00, t + 0.3); // A5
+      gain.gain.setValueAtTime(0.12, t);
+      gain.gain.setValueAtTime(0, t + 0.9);
+    }
+
+    osc.start(now);
+    ringtoneOscillators = [osc];
+  } catch (err) {
+    console.log('Incoming ringtone suppressed:', err);
+  }
+}
+
+function stopRingtone() {
+  if (ringtoneOscillators.length > 0) {
+    ringtoneOscillators.forEach(o => {
+      try { o.stop(); } catch(e){}
+    });
+    ringtoneOscillators = [];
+  }
+  if (ringtoneAudioCtx) {
+    try { ringtoneAudioCtx.close(); } catch(e){}
+    ringtoneAudioCtx = null;
+  }
+}
+
+// ================= SCREEN SHARING =================
+
+let isScreenSharing = false;
+let screenStream = null;
+
+async function toggleScreenShare() {
+  if (!peerConnection) return;
+
+  if (!isScreenSharing) {
+    try {
+      screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true });
+      const screenTrack = screenStream.getVideoTracks()[0];
+      const sender = peerConnection.getSenders().find(s => s.track && s.track.kind === 'video');
+      if (sender) {
+        sender.replaceTrack(screenTrack);
+      }
+      const localVideo = document.getElementById('local-video');
+      if (localVideo) localVideo.srcObject = screenStream;
+
+      screenTrack.onended = () => {
+        stopScreenShare();
+      };
+
+      isScreenSharing = true;
+      const btn = document.getElementById('btn-toggle-screen');
+      if (btn) btn.classList.add('bg-emerald-600', 'text-white');
+    } catch (err) {
+      console.warn('Screen share cancelled or unsupported:', err);
+    }
+  } else {
+    stopScreenShare();
+  }
+}
+
+function stopScreenShare() {
+  if (!isScreenSharing) return;
+  if (screenStream) {
+    screenStream.getTracks().forEach(t => t.stop());
+    screenStream = null;
+  }
+  if (localStream && peerConnection) {
+    const videoTrack = localStream.getVideoTracks()[0];
+    if (videoTrack) {
+      const sender = peerConnection.getSenders().find(s => s.track && s.track.kind === 'video');
+      if (sender) sender.replaceTrack(videoTrack);
+    }
+    const localVideo = document.getElementById('local-video');
+    if (localVideo) localVideo.srcObject = localStream;
+  }
+  isScreenSharing = false;
+  const btn = document.getElementById('btn-toggle-screen');
+  if (btn) btn.classList.remove('bg-emerald-600', 'text-white');
+}
+
 async function initiateDirectCall(targetUserId, targetName, targetAvatar, targetRole, callType = 'video', listingId = null) {
   if (!currentUser) {
     alert('Please log in to make calls.');
@@ -1174,6 +1641,7 @@ async function initiateDirectCall(targetUserId, targetName, targetAvatar, target
         role: currentUser.role
       }
     }));
+    playOutgoingRing();
   }
 }
 
@@ -1259,6 +1727,7 @@ function endCurrentCall() {
 }
 
 function cleanupCall() {
+  stopRingtone();
   clearInterval(callTimerInterval);
   callSeconds = 0;
 
@@ -1309,6 +1778,8 @@ function toggleSpeaker() {
 }
 
 function handleIncomingCall(data) {
+  stopRingtone();
+  playIncomingRing();
   incomingCallData = data;
   const modal = document.getElementById('incoming-call-modal');
   const nameEl = document.getElementById('incoming-caller-name');
@@ -1329,6 +1800,7 @@ function handleIncomingCall(data) {
 }
 
 async function acceptIncomingCall() {
+  stopRingtone();
   const modal = document.getElementById('incoming-call-modal');
   if (modal) modal.classList.add('hidden');
 
@@ -1368,6 +1840,7 @@ async function acceptIncomingCall() {
 }
 
 function rejectIncomingCall() {
+  stopRingtone();
   const modal = document.getElementById('incoming-call-modal');
   if (modal) modal.classList.add('hidden');
 
@@ -1424,14 +1897,17 @@ function initWebSocket() {
 
         case 'call_accepted':
           console.log('Call was accepted by peer.');
+          stopRingtone();
           break;
 
         case 'call_rejected':
+          stopRingtone();
           alert('Call was rejected: ' + (data.reason || 'Declined'));
           cleanupCall();
           break;
 
         case 'call_ended':
+          stopRingtone();
           alert('Call ended by other party.');
           cleanupCall();
           break;
@@ -1557,4 +2033,187 @@ function chatListingOwnerFromMap() {
   if (item) {
     startChatWithUser(item.owner_id, escapeQuotes(item.owner_name), escapeQuotes(item.owner_avatar), item.owner_role);
   }
+}
+
+// ================= LAND & FINANCE CALCULATOR =================
+
+let currentCalcTab = 'area';
+
+function openLandCalculatorModal() {
+  const modal = document.getElementById('calculator-modal');
+  if (modal) modal.classList.remove('hidden');
+  recalculateAreaUnits();
+  recalculateStampDuty();
+  recalculateEMI();
+  if (window.lucide) lucide.createIcons();
+}
+
+function closeLandCalculatorModal() {
+  const modal = document.getElementById('calculator-modal');
+  if (modal) modal.classList.add('hidden');
+}
+
+function switchCalcTab(tab) {
+  currentCalcTab = tab;
+  ['area', 'stamp', 'emi'].forEach(t => {
+    const btn = document.getElementById(`calc-tab-btn-${t}`);
+    const pane = document.getElementById(`calc-pane-${t}`);
+    if (t === tab) {
+      if (btn) {
+        btn.classList.add('border-wa-teal', 'text-wa-teal');
+        btn.classList.remove('border-transparent', 'text-slate-500');
+      }
+      if (pane) pane.classList.remove('hidden');
+    } else {
+      if (btn) {
+        btn.classList.remove('border-wa-teal', 'text-wa-teal');
+        btn.classList.add('border-transparent', 'text-slate-500');
+      }
+      if (pane) pane.classList.add('hidden');
+    }
+  });
+}
+
+function openLandCalculatorForActiveProperty() {
+  if (activePropertyDetailListing) {
+    const modal = document.getElementById('calculator-modal');
+    if (modal) modal.classList.remove('hidden');
+
+    const priceInput = document.getElementById('calc-stamp-price');
+    const loanAmountInput = document.getElementById('calc-loan-amount');
+    const areaInput = document.getElementById('calc-area-input');
+    const areaUnit = document.getElementById('calc-area-unit');
+
+    const price = activePropertyDetailListing.price || 5000000;
+    if (priceInput) priceInput.value = price;
+    if (loanAmountInput) loanAmountInput.value = Math.round(price * 0.75); // 75% LTV standard
+
+    if (areaInput && activePropertyDetailListing.area_sqft) {
+      areaInput.value = activePropertyDetailListing.area_sqft;
+      if (areaUnit) areaUnit.value = 'sqft';
+    }
+
+    switchCalcTab('stamp');
+    recalculateStampDuty();
+    recalculateEMI();
+    recalculateAreaUnits();
+    if (window.lucide) lucide.createIcons();
+  }
+}
+
+function recalculateAreaUnits() {
+  const inputEl = document.getElementById('calc-area-input');
+  const unitEl = document.getElementById('calc-area-unit');
+  if (!inputEl || !unitEl) return;
+
+  const val = parseFloat(inputEl.value) || 0;
+  const unit = unitEl.value;
+
+  // Convert everything to standard sqft first
+  let sqft = 0;
+  switch (unit) {
+    case 'acre': sqft = val * 43560; break;
+    case 'guntha': sqft = val * 1089; break;
+    case 'cent': sqft = val * 435.6; break;
+    case 'bigha': sqft = val * 27225; break;
+    case 'sqyd': sqft = val * 9; break;
+    case 'sqft': sqft = val; break;
+  }
+
+  // Then derive all units
+  const acre = sqft / 43560;
+  const guntha = sqft / 1089;
+  const cent = sqft / 435.6;
+  const bigha = sqft / 27225;
+  const sqyd = sqft / 9;
+
+  const setEl = (id, num, dec = 2) => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = num.toLocaleString('en-IN', { maximumFractionDigits: dec, minimumFractionDigits: (dec > 2 ? 2 : 0) });
+  };
+
+  setEl('unit-val-acre', acre, 4);
+  setEl('unit-val-guntha', guntha, 2);
+  setEl('unit-val-cent', cent, 2);
+  setEl('unit-val-bigha', bigha, 2);
+  setEl('unit-val-sqyd', sqyd, 1);
+  setEl('unit-val-sqft', sqft, 0);
+}
+
+function recalculateStampDuty() {
+  const priceEl = document.getElementById('calc-stamp-price');
+  const stateEl = document.getElementById('calc-stamp-state');
+  if (!priceEl || !stateEl) return;
+
+  const price = parseFloat(priceEl.value) || 0;
+  const state = stateEl.value;
+
+  let stampRate = 0.056;
+  let regRate = 0.01;
+  let cessRate = 0.02; // 2% of stamp duty in KA
+
+  if (state === 'MH') {
+    stampRate = 0.06;
+    regRate = 0.01;
+    cessRate = 0;
+  } else if (state === 'TS') {
+    stampRate = 0.06;
+    regRate = 0.005;
+    cessRate = 0;
+  } else if (state === 'TN') {
+    stampRate = 0.07;
+    regRate = 0.04;
+    cessRate = 0;
+  } else if (state === 'DL') {
+    stampRate = 0.06;
+    regRate = 0.01;
+    cessRate = 0;
+  }
+
+  const stampDuty = price * stampRate;
+  const regFee = price * regRate;
+  const cess = stampDuty * cessRate;
+  const total = price + stampDuty + regFee + cess;
+
+  const setEl = (id, num) => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = '₹' + Math.round(num).toLocaleString('en-IN');
+  };
+
+  setEl('stamp-duty-val', stampDuty);
+  setEl('stamp-reg-val', regFee);
+  setEl('stamp-cess-val', cess);
+  setEl('stamp-total-val', total);
+}
+
+function recalculateEMI() {
+  const amountEl = document.getElementById('calc-loan-amount');
+  const rateEl = document.getElementById('calc-loan-rate');
+  const tenureEl = document.getElementById('calc-loan-tenure');
+  if (!amountEl || !rateEl || !tenureEl) return;
+
+  const p = parseFloat(amountEl.value) || 0;
+  const annualRate = parseFloat(rateEl.value) || 8.5;
+  const years = parseFloat(tenureEl.value) || 15;
+
+  const monthlyRate = (annualRate / 12) / 100;
+  const totalMonths = years * 12;
+
+  let emi = 0;
+  if (monthlyRate > 0 && totalMonths > 0) {
+    emi = (p * monthlyRate * Math.pow(1 + monthlyRate, totalMonths)) / (Math.pow(1 + monthlyRate, totalMonths) - 1);
+  } else if (totalMonths > 0) {
+    emi = p / totalMonths;
+  }
+
+  const totalRepay = emi * totalMonths;
+  const totalInterest = totalRepay - p;
+
+  const emiEl = document.getElementById('emi-monthly-val');
+  const interestEl = document.getElementById('emi-interest-val');
+  const totalEl = document.getElementById('emi-total-val');
+
+  if (emiEl) emiEl.textContent = '₹' + Math.round(emi).toLocaleString('en-IN') + ' / mo';
+  if (interestEl) interestEl.textContent = '₹' + Math.round(totalInterest).toLocaleString('en-IN');
+  if (totalEl) totalEl.textContent = '₹' + Math.round(totalRepay).toLocaleString('en-IN');
 }
