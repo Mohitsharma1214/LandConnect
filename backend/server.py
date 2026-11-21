@@ -268,19 +268,20 @@ async def api_create_listing(request):
         owner_id = payload["sub"]
 
         conn = get_connection()
-        cursor = conn.cursor()
-        cursor.execute("""
-            INSERT INTO listings (title, description, price, price_unit, area_sqft, property_type,
-                                  location_address, city, state, latitude, longitude, images, features, owner_id)
-            VALUES (%s, %s, %s, 'total', %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-            RETURNING id;
-        """, (title, description, price, area_sqft, property_type, location_address, city, state, latitude, longitude, images, features, owner_id))
-        listing_id = cursor.fetchone()["id"]
-        conn.commit()
-        cursor.close()
-        conn.close()
-
-        return JSONResponse({"success": True, "id": listing_id, "message": "Land listing created successfully."})
+        try:
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT INTO listings (title, description, price, price_unit, area_sqft, property_type,
+                                      location_address, city, state, latitude, longitude, images, features, owner_id)
+                VALUES (%s, %s, %s, 'total', %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                RETURNING id;
+            """, (title, description, price, area_sqft, property_type, location_address, city, state, latitude, longitude, images, features, owner_id))
+            listing_id = cursor.fetchone()["id"]
+            conn.commit()
+            cursor.close()
+            return JSONResponse({"success": True, "id": listing_id, "message": "Land listing created successfully."})
+        finally:
+            conn.close()
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=400)
 

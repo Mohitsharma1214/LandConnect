@@ -14,6 +14,16 @@ DATABASE_URL = os.environ.get("DATABASE_URL", "").strip()
 
 _pool = None
 
+def is_connection_alive(conn):
+    try:
+        if conn.closed != 0:
+            return False
+        with conn.cursor() as cur:
+            cur.execute("SELECT 1;")
+        return True
+    except Exception:
+        return False
+
 class PooledConnectionWrapper:
     def __init__(self, conn, pool):
         self._conn = conn
@@ -23,12 +33,17 @@ class PooledConnectionWrapper:
     def close(self):
         if not self._closed:
             self._closed = True
+            is_broken = False
             try:
-                self._conn.rollback()
+                if self._conn.closed != 0:
+                    is_broken = True
+                else:
+                    self._conn.rollback()
             except Exception:
-                pass
+                is_broken = True
+            
             try:
-                self._pool.putconn(self._conn)
+                self._pool.putconn(self._conn, close=is_broken)
             except Exception:
                 pass
 
@@ -54,12 +69,16 @@ def get_connection():
             _pool = None
 
     if _pool is not None:
-        try:
-            conn = _pool.getconn()
-            return PooledConnectionWrapper(conn, _pool)
-        except Exception as e:
-            print(f"Pool getconn fallback: {e}")
-            return psycopg2.connect(DATABASE_URL, cursor_factory=RealDictCursor)
+        # Check health of retrieved connection; prune if server closed idle connection
+        for _ in range(3):
+            try:
+                conn = _pool.getconn()
+                if is_connection_alive(conn):
+                    return PooledConnectionWrapper(conn, _pool)
+                else:
+                    _pool.putconn(conn, close=True)
+            except Exception:
+                pass
 
     return psycopg2.connect(DATABASE_URL, cursor_factory=RealDictCursor)
 

@@ -56,3 +56,4 @@ The AI tools were employed not as code-replacement black boxes, but as interacti
 
 ## 4. Ethical & Professional Standards
 All generated code was thoroughly reviewed, inspected for security vulnerabilities (e.g. SQL injection prevention via parameterized queries, cryptographic password hashing with unique salts, and safe CORS configurations), and tested against live cloud services prior to submission.
+

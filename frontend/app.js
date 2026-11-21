@@ -40,6 +40,87 @@ const rtcConfig = {
   ]
 };
 
+// ================= IN-APP TOAST & ALERT DIALOGS (NO BROWSER POPUPS) =================
+let _toastTimer = null;
+function showToast(message, type = 'info') {
+  const toast = document.getElementById('in-app-toast');
+  const toastIcon = document.getElementById('in-app-toast-icon');
+  const toastText = document.getElementById('in-app-toast-text');
+  if (!toast || !toastText) {
+    console.log(`[Toast ${type}]: ${message}`);
+    return;
+  }
+
+  clearTimeout(_toastTimer);
+  toastText.textContent = message;
+
+  if (toastIcon) {
+    if (type === 'success') {
+      toastIcon.className = 'w-6 h-6 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0';
+      toastIcon.innerHTML = '<i data-lucide="check" class="w-3.5 h-3.5"></i>';
+    } else if (type === 'error') {
+      toastIcon.className = 'w-6 h-6 rounded-full bg-rose-500/20 text-rose-400 flex items-center justify-center shrink-0';
+      toastIcon.innerHTML = '<i data-lucide="alert-circle" class="w-3.5 h-3.5"></i>';
+    } else if (type === 'warning') {
+      toastIcon.className = 'w-6 h-6 rounded-full bg-amber-500/20 text-amber-400 flex items-center justify-center shrink-0';
+      toastIcon.innerHTML = '<i data-lucide="alert-triangle" class="w-3.5 h-3.5"></i>';
+    } else {
+      toastIcon.className = 'w-6 h-6 rounded-full bg-wa-teal/30 text-emerald-300 flex items-center justify-center shrink-0';
+      toastIcon.innerHTML = '<i data-lucide="info" class="w-3.5 h-3.5"></i>';
+    }
+  }
+
+  toast.classList.remove('hidden');
+  if (window.lucide) lucide.createIcons();
+
+  _toastTimer = setTimeout(() => {
+    toast.classList.add('hidden');
+  }, 3500);
+}
+
+function showInAppAlert(title, message, type = 'info') {
+  const modal = document.getElementById('app-alert-modal');
+  const iconWrap = document.getElementById('app-alert-icon-wrap');
+  const titleEl = document.getElementById('app-alert-title');
+  const msgEl = document.getElementById('app-alert-message');
+  const btnEl = document.getElementById('app-alert-btn');
+  if (!modal) {
+    showToast(`${title}: ${message}`, type);
+    return;
+  }
+
+  if (titleEl) titleEl.textContent = title;
+  if (msgEl) msgEl.textContent = message;
+
+  if (iconWrap) {
+    if (type === 'error') {
+      iconWrap.className = 'w-12 h-12 rounded-full bg-rose-100 text-rose-600 mx-auto flex items-center justify-center';
+      iconWrap.innerHTML = '<i data-lucide="alert-circle" class="w-6 h-6"></i>';
+      if (btnEl) btnEl.className = 'w-full bg-rose-600 hover:bg-rose-700 text-white py-2.5 rounded-xl font-bold text-xs transition shadow-md';
+    } else if (type === 'success') {
+      iconWrap.className = 'w-12 h-12 rounded-full bg-emerald-100 text-emerald-600 mx-auto flex items-center justify-center';
+      iconWrap.innerHTML = '<i data-lucide="check-circle" class="w-6 h-6"></i>';
+      if (btnEl) btnEl.className = 'w-full bg-wa-teal hover:bg-wa-tealDark text-white py-2.5 rounded-xl font-bold text-xs transition shadow-md';
+    } else if (type === 'warning') {
+      iconWrap.className = 'w-12 h-12 rounded-full bg-amber-100 text-amber-600 mx-auto flex items-center justify-center';
+      iconWrap.innerHTML = '<i data-lucide="alert-triangle" class="w-6 h-6"></i>';
+      if (btnEl) btnEl.className = 'w-full bg-amber-600 hover:bg-amber-700 text-white py-2.5 rounded-xl font-bold text-xs transition shadow-md';
+    } else {
+      iconWrap.className = 'w-12 h-12 rounded-full bg-teal-100 text-wa-teal mx-auto flex items-center justify-center';
+      iconWrap.innerHTML = '<i data-lucide="info" class="w-6 h-6"></i>';
+      if (btnEl) btnEl.className = 'w-full bg-wa-teal hover:bg-wa-tealDark text-white py-2.5 rounded-xl font-bold text-xs transition shadow-md';
+    }
+  }
+
+  modal.classList.remove('hidden');
+  if (window.lucide) lucide.createIcons();
+}
+
+function closeAppAlertModal() {
+  const modal = document.getElementById('app-alert-modal');
+  if (modal) modal.classList.add('hidden');
+}
+
 // ================= SAVED / FAVORITE LAND LISTINGS =================
 let savedListingIds = JSON.parse(localStorage.getItem('landconnect_saved') || '[]');
 let isFilteringSaved = false;
@@ -667,7 +748,7 @@ function escapeQuotes(str) {
 
 function openNewListingModal() {
   if (currentUser?.role === 'buyer') {
-    alert('Access restricted: Only verified Sellers and Brokers are permitted to create land listings.');
+    showInAppAlert('Access Restricted', 'Only verified Sellers and Brokers are permitted to create land listings.', 'warning');
     return;
   }
   const modal = document.getElementById('new-listing-modal');
@@ -724,13 +805,15 @@ async function handleListingImageUpload(inputEl, previewBoxId, previewImgId, hid
           statusEl.innerHTML = `<i data-lucide="check-circle" class="w-3.5 h-3.5 text-emerald-400"></i> Stored in ${data.bucket}`;
           if (window.lucide) lucide.createIcons();
         }
+        showToast(`Photo stored in ${data.bucket} bucket`, 'success');
       } else {
-        alert('Upload failed: ' + (data.error || 'Server error'));
+        showToast('Upload failed: ' + (data.error || 'Server error'), 'error');
         if (statusEl) statusEl.textContent = 'Upload failed';
       }
     } catch (err) {
       console.error('Error uploading image to bucket:', err);
       if (statusEl) statusEl.textContent = 'Upload error: ' + err.message;
+      showToast('Image upload error', 'error');
     }
   };
 }
@@ -743,7 +826,7 @@ function closeNewListingModal() {
 async function handleCreateListing(e) {
   e.preventDefault();
   if (!currentToken) {
-    alert('Please log in first.');
+    showInAppAlert('Login Required', 'Please log in to publish land listings.', 'info');
     return;
   }
 
@@ -771,7 +854,7 @@ async function handleCreateListing(e) {
     });
     const data = await res.json();
     if (data.success) {
-      alert('Land Listing published successfully!');
+      showToast('Land listing published successfully!', 'success');
       closeNewListingModal();
       await loadListings();
       if (currentUser?.role === 'seller' || currentUser?.role === 'broker') {
@@ -779,10 +862,12 @@ async function handleCreateListing(e) {
       }
       switchTab('feed');
     } else {
-      alert(data.error || 'Failed to create listing');
+      const rawErr = data.error || 'Failed to create listing';
+      const friendlyErr = rawErr.includes('SSL connection') ? 'Database reconnected. Please tap Publish again.' : rawErr;
+      showInAppAlert('Publish Listing', friendlyErr, 'error');
     }
   } catch (err) {
-    alert('Error: ' + err.message);
+    showInAppAlert('Publish Listing', 'Connection issue: ' + err.message, 'error');
   }
 }
 
@@ -950,15 +1035,15 @@ async function handleUpdateListing(e) {
     });
     const data = await res.json();
     if (data.success) {
-      alert('Listing updated successfully!');
+      showToast('Listing updated successfully!', 'success');
       closeEditListingModal();
       await loadListings();
       await loadMyListings();
     } else {
-      alert(data.error || 'Failed to update listing');
+      showInAppAlert('Update Listing', data.error || 'Failed to update listing', 'error');
     }
   } catch (err) {
-    alert('Error updating listing: ' + err.message);
+    showInAppAlert('Update Listing', 'Error updating listing: ' + err.message, 'error');
   }
 }
 
@@ -975,15 +1060,15 @@ async function handleDeleteListing(listingId) {
     });
     const data = await res.json();
     if (data.success) {
-      alert('Land listing deleted.');
+      showToast('Land listing deleted.', 'success');
       closePropertyDetails();
       await loadListings();
       await loadMyListings();
     } else {
-      alert(data.error || 'Failed to delete listing');
+      showInAppAlert('Delete Listing', data.error || 'Failed to delete listing', 'error');
     }
   } catch (err) {
-    alert('Error deleting listing: ' + err.message);
+    showInAppAlert('Delete Listing', 'Error deleting listing: ' + err.message, 'error');
   }
 }
 
@@ -1400,7 +1485,7 @@ async function toggleVoiceRecording() {
 
     if (window.lucide) lucide.createIcons();
   } catch (err) {
-    alert('Microphone access is required to record voice notes.');
+    showInAppAlert('Microphone Required', 'Microphone access is required to record voice notes.', 'warning');
     console.warn('Microphone error:', err);
   }
 }
@@ -1809,11 +1894,11 @@ function stopScreenShare() {
 
 async function initiateDirectCall(targetUserId, targetName, targetAvatar, targetRole, callType = 'video', listingId = null) {
   if (!currentUser) {
-    alert('Please log in to make calls.');
+    showInAppAlert('Login Required', 'Please log in to make calls.', 'info');
     return;
   }
   if (targetUserId === currentUser.id) {
-    alert('Cannot call yourself.');
+    showToast('Cannot call yourself.', 'warning');
     return;
   }
 
@@ -1970,11 +2055,11 @@ function toggleVideoCamera() {
 }
 
 function toggleVideoCameraFlip() {
-  alert('Camera switched (Front / Rear)');
+  showToast('Camera switched (Front / Rear)', 'info');
 }
 
 function toggleSpeaker() {
-  alert('Speaker output toggled.');
+  showToast('Speaker output toggled', 'info');
 }
 
 function handleIncomingCall(data) {
@@ -2102,13 +2187,13 @@ function initWebSocket() {
 
         case 'call_rejected':
           stopRingtone();
-          alert('Call was rejected: ' + (data.reason || 'Declined'));
+          showToast('Call was rejected: ' + (data.reason || 'Declined'), 'error');
           cleanupCall();
           break;
 
         case 'call_ended':
           stopRingtone();
-          alert('Call ended by other party.');
+          showToast('Call ended by other party.', 'info');
           cleanupCall();
           break;
 
