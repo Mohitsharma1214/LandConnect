@@ -147,7 +147,7 @@ os.makedirs(STORAGE_BUCKET_DIR, exist_ok=True)
 S3_BUCKET_NAME = os.getenv("S3_BUCKET_NAME") or os.getenv("AWS_S3_BUCKET")
 AWS_ACCESS_KEY_ID = os.getenv("AWS_ACCESS_KEY_ID")
 AWS_SECRET_ACCESS_KEY = os.getenv("AWS_SECRET_ACCESS_KEY")
-AWS_ENDPOINT_URL = os.getenv("AWS_ENDPOINT_URL") or os.getenv("S3_ENDPOINT_URL")
+AWS_ENDPOINT_URL = os.getenv("AWS_ENDPOINT_URL") or os.getenv("AWS_ENDPOINT_URL_S3") or os.getenv("S3_ENDPOINT_URL")
 AWS_REGION = os.getenv("AWS_REGION", "us-east-2")
 
 async def api_upload_image(request):
@@ -184,19 +184,19 @@ async def api_upload_image(request):
         if S3_BUCKET_NAME and AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY:
             try:
                 import boto3
+                from botocore.client import Config
                 client_kwargs = {
                     "aws_access_key_id": AWS_ACCESS_KEY_ID,
                     "aws_secret_access_key": AWS_SECRET_ACCESS_KEY,
-                    "region_name": AWS_REGION
+                    "region_name": AWS_REGION,
+                    "config": Config(s3={'addressing_style': 'path'})
                 }
                 if AWS_ENDPOINT_URL:
                     client_kwargs["endpoint_url"] = AWS_ENDPOINT_URL
                 s3 = boto3.client("s3", **client_kwargs)
-                s3.upload_file(target_path, S3_BUCKET_NAME, unique_name, ExtraArgs={"ACL": "public-read"})
-                public_url = f"https://{S3_BUCKET_NAME}.s3.{AWS_REGION}.amazonaws.com/{unique_name}"
-                if AWS_ENDPOINT_URL:
-                    public_url = f"{AWS_ENDPOINT_URL}/{S3_BUCKET_NAME}/{unique_name}"
-                bucket_provider = f"Cloud S3 Bucket ({S3_BUCKET_NAME})"
+                s3.upload_file(target_path, S3_BUCKET_NAME, unique_name)
+                public_url = f"{AWS_ENDPOINT_URL}/{S3_BUCKET_NAME}/{unique_name}" if AWS_ENDPOINT_URL else f"/bucket/{unique_name}"
+                bucket_provider = f"Neon Object Storage ({S3_BUCKET_NAME})"
             except Exception as s3_err:
                 print(f"Warning: Cloud S3 bucket upload failed, using local bucket: {s3_err}")
 
