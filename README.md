@@ -131,9 +131,9 @@ The application comes pre-seeded with authentic personas for evaluation:
 
 | Persona | Role | Email | Password | Capabilities |
 |---|---|---|---|---|
-| **Aarav Patel** | **Buyer** | `buyer@landconnect.com` | `buyer123` | Browse land feed, filter listings, chat with owners, place video/audio calls. |
-| **Vikram Reddy** | **Seller** | `seller@landconnect.com` | `seller123` | Post new land listings, upload bucket photos, set GPS pin, manage listings. |
-| **Ananya Sharma**| **Broker** | `broker@landconnect.com` | `broker123` | Manage client portfolio, post commercial parcels, initiate video meeting rooms. |
+| **Aarav Patel** | **Buyer** | `buyer@landconnect.si` | `buyer123` | Browse land feed, filter listings, chat with owners, place video/audio calls. |
+| **Vikram Reddy** | **Seller** | `seller@landconnect.si` | `seller123` | Post new land listings, upload bucket photos, set GPS pin, manage listings. |
+| **Ananya Sharma**| **Broker** | `broker@landconnect.si` | `broker123` | Manage client portfolio, post commercial parcels, initiate video meeting rooms. |
 
 *(You can also register a brand-new account with any custom email and role using the registration screen!)*
 

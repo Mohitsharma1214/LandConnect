@@ -56,6 +56,31 @@ function escapeQuotes(str) {
     .replace(/>/g, '&gt;');
 }
 
+function togglePasswordVisibility(inputId, btnEl) {
+  const input = document.getElementById(inputId);
+  if (!input) return;
+  const isPassword = input.type === 'password';
+  input.type = isPassword ? 'text' : 'password';
+  if (btnEl) {
+    btnEl.innerHTML = isPassword 
+      ? '<i data-lucide="eye-off" class="w-4 h-4 text-wa-teal"></i>' 
+      : '<i data-lucide="eye" class="w-4 h-4 text-slate-400"></i>';
+    if (window.lucide) lucide.createIcons();
+  }
+}
+
+function fillDemoCredentials(email, password) {
+  const emailInput = document.getElementById('login-email');
+  const passInput = document.getElementById('login-password');
+  if (emailInput) emailInput.value = email;
+  if (passInput) passInput.value = password;
+  if (typeof showToast === 'function') {
+    showToast('Selected demo account: ' + email, 'info');
+  }
+}
+
+window.togglePasswordVisibility = togglePasswordVisibility;
+window.fillDemoCredentials = fillDemoCredentials;
 window.escapeHTML = escapeHTML;
 window.escapeQuotes = escapeQuotes;
 window.getInitialsAvatar = getInitialsAvatar;
@@ -2090,7 +2115,7 @@ function renderContactProfileUI(user, isLoadingListings = false) {
   if (phoneEl) phoneEl.textContent = user.phone_masked || '+91 98*** **321';
 
   const emailEl = document.getElementById('cp-email');
-  if (emailEl) emailEl.textContent = user.email || `${(user.name||'user').toLowerCase().replace(/\s+/g, '')}@landconnect.com`;
+  if (emailEl) emailEl.textContent = user.email || `${(user.name||'user').toLowerCase().replace(/\s+/g, '')}@landconnect.si`;
 
   const joinedEl = document.getElementById('cp-joined');
   if (joinedEl) {

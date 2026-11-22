@@ -278,7 +278,7 @@ def init_db():
         seed_users = [
             (
                 "Aarav Patel (Buyer)",
-                "buyer@landconnect.com",
+                "buyer@landconnect.si",
                 hash_password("buyer123"),
                 "buyer",
                 "+91 98*** **321",
@@ -287,7 +287,7 @@ def init_db():
             ),
             (
                 "Vikram Malhotra (Seller)",
-                "seller@landconnect.com",
+                "seller@landconnect.si",
                 hash_password("seller123"),
                 "seller",
                 "+91 99*** **789",
@@ -296,7 +296,7 @@ def init_db():
             ),
             (
                 "Ananya Sharma (Broker)",
-                "broker@landconnect.com",
+                "broker@landconnect.si",
                 hash_password("broker123"),
                 "broker",
                 "+91 97*** **456",
@@ -312,6 +312,14 @@ def init_db():
             """, u)
         conn.commit()
         print("Seeded demo users into Neon PostgreSQL.")
+
+    try:
+        cursor.execute("UPDATE users SET email = 'buyer@landconnect.si' WHERE email = 'buyer@landconnect.com';")
+        cursor.execute("UPDATE users SET email = 'seller@landconnect.si' WHERE email = 'seller@landconnect.com';")
+        cursor.execute("UPDATE users SET email = 'broker@landconnect.si' WHERE email = 'broker@landconnect.com';")
+        conn.commit()
+    except Exception:
+        pass
 
     cursor.close()
     conn.close()
