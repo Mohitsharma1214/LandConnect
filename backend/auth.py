@@ -1,10 +1,15 @@
+import os
 import jwt
 import datetime
 import re
-from database import get_connection, hash_password
+from dotenv import load_dotenv
+from database import get_connection, hash_password, verify_password
 
-JWT_SECRET = "landconnect_secure_jwt_token_key_2026"
-JWT_ALGORITHM = "HS256"
+ENV_PATH = os.path.join(os.path.dirname(__file__), ".env")
+load_dotenv(ENV_PATH)
+
+JWT_SECRET = os.environ.get("JWT_SECRET", "landconnect_secure_jwt_token_key_2026")
+JWT_ALGORITHM = os.environ.get("JWT_ALGORITHM", "HS256")
 
 def create_jwt_token(user_id: int, role: str, email: str) -> str:
     payload = {
@@ -104,9 +109,18 @@ def login_user(email: str, password: str):
         if not user:
             return {"error": "Invalid email or password."}
         
-        password_hash = hash_password(password)
-        if user["password_hash"] != password_hash:
+        is_valid, needs_rehash = verify_password(password, user["password_hash"])
+        if not is_valid:
             return {"error": "Invalid email or password."}
+
+        # Seamlessly auto-upgrade legacy hash to PBKDF2 on successful login
+        if needs_rehash:
+            try:
+                new_hash = hash_password(password)
+                cursor.execute("UPDATE users SET password_hash = %s WHERE id = %s", (new_hash, user["id"]))
+                conn.commit()
+            except Exception:
+                pass
         
         token = create_jwt_token(user["id"], user["role"], user["email"])
         return {

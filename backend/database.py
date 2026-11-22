@@ -1,5 +1,7 @@
 import os
 import hashlib
+import hmac
+import secrets
 import json
 import psycopg2
 from psycopg2.pool import ThreadedConnectionPool
@@ -80,8 +82,42 @@ def get_connection():
 
     return psycopg2.connect(DATABASE_URL, cursor_factory=RealDictCursor)
 
-def hash_password(password: str, salt: str = "landconnect_salt_2026") -> str:
-    return hashlib.sha256((password + salt).encode('utf-8')).hexdigest()
+def hash_password(password: str) -> str:
+    """
+    Secure password hashing using PBKDF2-HMAC-SHA256 with 100,000 iterations
+    and a cryptographically random 16-byte salt.
+    """
+    salt = secrets.token_hex(16)
+    dk = hashlib.pbkdf2_hmac('sha256', password.encode('utf-8'), salt.encode('utf-8'), 100000)
+    return f"pbkdf2:sha256:100000${salt}${dk.hex()}"
+
+def verify_password(password: str, stored_hash: str) -> tuple[bool, bool]:
+    """
+    Verifies a password against the stored hash.
+    Returns (is_valid, needs_rehash).
+    Supports both secure PBKDF2 hashes and legacy SHA-256 hashes for seamless backwards compatibility.
+    """
+    if not stored_hash or not password:
+        return False, False
+
+    if stored_hash.startswith("pbkdf2:sha256:"):
+        try:
+            parts = stored_hash.split("$")
+            if len(parts) == 3:
+                iterations = int(parts[0].split(":")[2])
+                salt = parts[1]
+                target_hash = parts[2]
+                computed = hashlib.pbkdf2_hmac('sha256', password.encode('utf-8'), salt.encode('utf-8'), iterations).hex()
+                return hmac.compare_digest(computed, target_hash), False
+        except Exception:
+            return False, False
+
+    # Legacy SHA-256 fallback (landconnect_salt_2026)
+    legacy_hash = hashlib.sha256((password + "landconnect_salt_2026").encode('utf-8')).hexdigest()
+    if hmac.compare_digest(legacy_hash, stored_hash):
+        return True, True  # Valid, but needs automatic upgrade to PBKDF2
+
+    return False, False
 
 def init_db():
     if not DATABASE_URL:

@@ -36,6 +36,28 @@ function handleAvatarError(imgEl, name, role) {
   imgEl.src = getInitialsAvatar(name, role);
 }
 
+function escapeHTML(str) {
+  if (str === null || str === undefined) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function escapeQuotes(str) {
+  if (!str) return '';
+  return String(str)
+    .replace(/\\/g, '\\\\')
+    .replace(/'/g, "\\'")
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+window.escapeHTML = escapeHTML;
+window.escapeQuotes = escapeQuotes;
 window.getInitialsAvatar = getInitialsAvatar;
 window.handleAvatarError = handleAvatarError;
 
@@ -779,15 +801,15 @@ function renderListings(listings) {
 
         <div class="p-3.5 space-y-2">
           <div onclick="openPropertyDetails(${item.id})" class="cursor-pointer">
-            <h3 class="font-bold text-slate-800 text-sm leading-snug hover:text-wa-teal transition">${item.title}</h3>
+            <h3 class="font-bold text-slate-800 text-sm leading-snug hover:text-wa-teal transition">${escapeHTML(item.title)}</h3>
             
             <div class="flex items-center gap-1 text-[11px] text-slate-500 mt-1">
               <i data-lucide="map-pin" class="w-3.5 h-3.5 text-wa-teal flex-shrink-0"></i>
-              <span class="truncate">${item.location_address}, ${item.city}</span>
+              <span class="truncate">${escapeHTML(item.location_address)}, ${escapeHTML(item.city)}</span>
             </div>
 
             <p class="text-xs text-slate-600 line-clamp-2 leading-relaxed mt-1">
-              ${item.description}
+              ${escapeHTML(item.description)}
             </p>
           </div>
 
@@ -852,10 +874,6 @@ function filterListings() {
   renderListings(filtered);
 }
 
-function escapeQuotes(str) {
-  if (!str) return '';
-  return str.replace(/'/g, "\\'").replace(/"/g, '&quot;');
-}
 
 // ================= CREATE LISTING MODAL =================
 
@@ -1245,8 +1263,8 @@ async function loadMyListings() {
           <div class="flex items-center gap-2.5 truncate cursor-pointer" onclick="openPropertyDetails(${item.id})">
             <img src="${firstImg}" onerror="this.onerror=null; this.src='https://images.unsplash.com/photo-1500382017468-9049fed747ef?w=800';" class="w-10 h-10 rounded-lg object-cover flex-shrink-0 border border-slate-200">
             <div class="truncate">
-              <h5 class="font-bold text-xs text-slate-800 truncate">${item.title}</h5>
-              <div class="text-[10px] text-emerald-700 font-semibold">₹${formattedPrice} • ${item.property_type}</div>
+              <h5 class="font-bold text-xs text-slate-800 truncate">${escapeHTML(item.title)}</h5>
+              <div class="text-[10px] text-emerald-700 font-semibold">₹${formattedPrice} • ${escapeHTML(item.property_type)}</div>
             </div>
           </div>
           <div class="flex items-center gap-1.5 flex-shrink-0">
@@ -1513,7 +1531,7 @@ function renderChatRowHtml(u, isArchivedView = false) {
     } else if (u.last_message_type === 'property_inquiry') {
       previewText = '📍 Land parcel inquiry';
     } else {
-      previewText = escapeQuotes(u.last_message);
+      previewText = escapeHTML(u.last_message);
     }
   }
 
@@ -1531,7 +1549,7 @@ function renderChatRowHtml(u, isArchivedView = false) {
         <div class="min-w-0 flex-1">
           <div class="flex items-center justify-between mb-0.5">
             <div class="flex items-center gap-1.5 truncate">
-              <h4 class="font-bold text-xs text-slate-800 truncate">${u.name}</h4>
+              <h4 class="font-bold text-xs text-slate-800 truncate">${escapeHTML(u.name)}</h4>
               <span class="text-[9px] px-1.5 py-0.2 rounded font-semibold uppercase shrink-0 ${
                 u.role === 'buyer' ? 'bg-blue-100 text-blue-700' :
                 u.role === 'seller' ? 'bg-emerald-100 text-emerald-700' : 'bg-purple-100 text-purple-700'
@@ -2684,7 +2702,7 @@ function generateMessageHtml(m, isPending = false) {
   const bubbleId = m.tempId ? `msg-bubble-${m.tempId}` : `msg-bubble-${m.id}`;
   const statusId = m.tempId ? `msg-status-${m.tempId}` : `msg-status-${m.id}`;
 
-  let messageContentHtml = `<p class="leading-relaxed select-text">${m.content}</p>`;
+  let messageContentHtml = `<p class="leading-relaxed select-text">${escapeHTML(m.content)}</p>`;
 
   // If meeting room invitation
   if (m.message_type === 'meeting') {
@@ -2699,10 +2717,10 @@ function generateMessageHtml(m, isPending = false) {
             </div>
             <span class="font-bold text-xs">Virtual Meeting Room</span>
           </div>
-          <span class="text-[9px] bg-white/20 px-1.5 py-0.5 rounded font-mono font-semibold">${roomId}</span>
+          <span class="text-[9px] bg-white/20 px-1.5 py-0.5 rounded font-mono font-semibold">${escapeHTML(roomId)}</span>
         </div>
-        <p class="text-[11px] text-emerald-100">${m.content}</p>
-        <button onclick="joinMultiPartyMeetingRoom('${roomId}')" class="mt-2.5 w-full bg-wa-green hover:bg-emerald-400 text-wa-tealDark py-1.5 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 shadow transition">
+        <p class="text-[11px] text-emerald-100">${escapeHTML(m.content)}</p>
+        <button onclick="joinMultiPartyMeetingRoom('${escapeQuotes(roomId)}')" class="mt-2.5 w-full bg-wa-green hover:bg-emerald-400 text-wa-tealDark py-1.5 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 shadow transition">
           <i data-lucide="video" class="w-3.5 h-3.5"></i>
           Join Video Meeting
         </button>
@@ -2792,12 +2810,12 @@ function generateMessageHtml(m, isPending = false) {
           <img src="${img}" onerror="this.onerror=null; this.src='https://images.unsplash.com/photo-1500382017468-9049fed747ef?w=200';" class="w-12 h-12 rounded-lg object-cover flex-shrink-0 border border-slate-200">
           <div class="truncate">
             <div class="text-[9px] uppercase font-bold text-wa-teal">Land Parcel Inquiry</div>
-            <div class="font-bold text-xs text-slate-800 truncate">${m.listing_title}</div>
+            <div class="font-bold text-xs text-slate-800 truncate">${escapeHTML(m.listing_title)}</div>
             <div class="text-[10px] text-emerald-700 font-extrabold">₹${Number(m.listing_price || 0).toLocaleString('en-IN')}</div>
           </div>
         </div>
       </div>
-      <p class="leading-relaxed select-text">${m.content}</p>
+      <p class="leading-relaxed select-text">${escapeHTML(m.content)}</p>
     `;
   }
 

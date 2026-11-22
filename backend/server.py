@@ -277,19 +277,27 @@ STORAGE_BUCKET_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "s
 os.makedirs(STORAGE_BUCKET_DIR, exist_ok=True)
 
 S3_BUCKET_NAME = os.getenv("S3_BUCKET_NAME") or os.getenv("AWS_S3_BUCKET") or "uploads"
-AWS_ACCESS_KEY_ID = os.getenv("AWS_ACCESS_KEY_ID") or "nak_live_9406bff379fb46609f5f7e7fd905f72e"
-AWS_SECRET_ACCESS_KEY = os.getenv("AWS_SECRET_ACCESS_KEY") or "nsk_live_fc181a459fa6ba3e37af4428f7f6f4e49a192b9c40c27c9154e760ce53d6391d"
-AWS_ENDPOINT_URL = os.getenv("AWS_ENDPOINT_URL") or os.getenv("AWS_ENDPOINT_URL_S3") or os.getenv("S3_ENDPOINT_URL") or "https://br-soft-credit-bdxw0gxn.storage.c-8.us-east-2.aws.neon.tech"
+AWS_ACCESS_KEY_ID = os.getenv("AWS_ACCESS_KEY_ID", "")
+AWS_SECRET_ACCESS_KEY = os.getenv("AWS_SECRET_ACCESS_KEY", "")
+AWS_ENDPOINT_URL = os.getenv("AWS_ENDPOINT_URL") or os.getenv("AWS_ENDPOINT_URL_S3") or os.getenv("S3_ENDPOINT_URL", "")
 AWS_REGION = os.getenv("AWS_REGION", "us-east-2")
 
 async def serve_bucket_file(request):
     """
     Serve bucket files from local storage if available; otherwise proxy/stream
     directly from Neon Object Storage S3 bucket and cache locally.
+    Protected against path traversal attacks.
     Never return a 404 broken image: fallback to an SVG avatar.
     """
-    filename = request.path_params.get("filename", "")
-    target_path = os.path.join(STORAGE_BUCKET_DIR, filename)
+    raw_filename = request.path_params.get("filename", "")
+    filename = os.path.basename(raw_filename).strip()
+    if not filename or filename in ('.', '..') or '/' in filename or '\\' in filename:
+        return Response("Invalid filename.", status_code=400)
+
+    target_path = os.path.abspath(os.path.join(STORAGE_BUCKET_DIR, filename))
+    if not target_path.startswith(os.path.abspath(STORAGE_BUCKET_DIR)):
+        return Response("Access denied.", status_code=403)
+
     if os.path.exists(target_path) and os.path.isfile(target_path):
         return FileResponse(target_path)
 
@@ -355,7 +363,23 @@ async def api_upload_image(request):
             raw_file_data = raw_file_data.split(",", 1)[1]
 
         file_bytes = base64.b64decode(raw_file_data)
-        ext = os.path.splitext(raw_filename)[1] or ".jpg"
+        MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB
+        if len(file_bytes) > MAX_FILE_SIZE:
+            return JSONResponse({"error": "File size exceeds the 10 MB maximum limit."}, status_code=413)
+
+        ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
+        raw_ext = os.path.splitext(raw_filename)[1].lower()
+        ext = raw_ext if raw_ext in ALLOWED_EXTENSIONS else ".jpg"
+
+        # Validate image signature / magic bytes
+        is_valid_image = (
+            file_bytes.startswith(b"\xff\xd8\xff") or  # JPEG
+            file_bytes.startswith(b"\x89PNG\r\n\x1a\n") or  # PNG
+            (file_bytes.startswith(b"RIFF") and b"WEBP" in file_bytes[:16])  # WebP
+        )
+        if not is_valid_image and len(file_bytes) > 4:
+            return JSONResponse({"error": "Invalid image file format. Only JPEG, PNG, and WebP images are allowed."}, status_code=400)
+
         unique_name = f"land_{uuid.uuid4().hex[:12]}{ext}"
         target_path = os.path.join(STORAGE_BUCKET_DIR, unique_name)
 
@@ -1011,6 +1035,8 @@ async def websocket_signaling(websocket: WebSocket):
                     print("WS chat_message error:", e)
 
             elif msg_type == "initiate_call":
+                if not authenticated_user_id:
+                    continue
                 receiver_id = data.get("receiverId")
                 call_type = data.get("callType", "video")
                 listing_id = data.get("listingId")
@@ -1025,6 +1051,8 @@ async def websocket_signaling(websocket: WebSocket):
                 })
 
             elif msg_type == "accept_call":
+                if not authenticated_user_id:
+                    continue
                 caller_id = data.get("callerId")
                 await send_to_user(caller_id, {
                     "type": "call_accepted",
@@ -1032,6 +1060,8 @@ async def websocket_signaling(websocket: WebSocket):
                 })
 
             elif msg_type == "reject_call":
+                if not authenticated_user_id:
+                    continue
                 caller_id = data.get("callerId")
                 reason = data.get("reason", "Call declined")
                 await send_to_user(caller_id, {
@@ -1040,6 +1070,8 @@ async def websocket_signaling(websocket: WebSocket):
                 })
 
             elif msg_type == "end_call":
+                if not authenticated_user_id:
+                    continue
                 target_user_id = data.get("targetUserId")
                 duration = data.get("duration", 0)
                 call_type = data.get("callType", "video")

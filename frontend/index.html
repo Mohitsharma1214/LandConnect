@@ -63,6 +63,26 @@
       imgEl.onerror = null;
       imgEl.src = getInitialsAvatar(name, role);
     }
+    function escapeHTML(str) {
+      if (str === null || str === undefined) return '';
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+    function escapeQuotes(str) {
+      if (!str) return '';
+      return String(str)
+        .replace(/\\/g, '\\\\')
+        .replace(/'/g, "\\'")
+        .replace(/"/g, '&quot;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+    }
+    window.escapeHTML = escapeHTML;
+    window.escapeQuotes = escapeQuotes;
     window.getInitialsAvatar = getInitialsAvatar;
     window.handleAvatarError = handleAvatarError;
   </script>
