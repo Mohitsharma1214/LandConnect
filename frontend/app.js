@@ -859,9 +859,9 @@ function renderListings(listings) {
             </div>
 
             <div class="flex items-center gap-1.5">
-              <button onclick="startChatWithUser(${item.owner_id}, '${escapeQuotes(item.owner_name)}', '${escapeQuotes(item.owner_avatar)}', '${item.owner_role}')" 
+              <button onclick="startChatWithUser(${item.owner_id}, '${escapeQuotes(item.owner_name)}', '${escapeQuotes(item.owner_avatar)}', '${item.owner_role}', ${item.id})" 
                       class="bg-emerald-50 hover:bg-emerald-100 text-wa-teal p-2 rounded-xl transition" 
-                      title="Send Message">
+                      title="Send Message & Plot Inquiry">
                 <i data-lucide="message-circle" class="w-4 h-4"></i>
               </button>
               <button onclick="initiateDirectCall(${item.owner_id}, '${escapeQuotes(item.owner_name)}', '${escapeQuotes(item.owner_avatar)}', '${item.owner_role}', 'audio', ${item.id})" 
@@ -1098,7 +1098,7 @@ function openPropertyDetails(listingId) {
   // Contact actions
   if (btnChat) btnChat.onclick = () => {
     closePropertyDetails();
-    startChatWithUser(item.owner_id, escapeQuotes(item.owner_name), escapeQuotes(item.owner_avatar), item.owner_role);
+    startChatWithUser(item.owner_id, escapeQuotes(item.owner_name), escapeQuotes(item.owner_avatar), item.owner_role, item.id);
   };
   if (btnCallAudio) btnCallAudio.onclick = () => {
     closePropertyDetails();
@@ -1866,7 +1866,7 @@ function updateChatPeerStatusUI() {
 
 let chatSyncInterval = null;
 
-async function startChatWithUser(userId, name, avatar, role) {
+async function startChatWithUser(userId, name, avatar, role, listingId = null) {
   const targetId = Number(userId);
   const myId = currentUser ? Number(currentUser.id) : 0;
   const isSelf = (myId > 0 && targetId === myId);
@@ -1955,6 +1955,13 @@ async function startChatWithUser(userId, name, avatar, role) {
   await fetchChatMessages(targetId);
   switchTab('chats');
   if (window.lucide) lucide.createIcons();
+
+  if (listingId && !isSelf) {
+    const listing = allListings.find(l => String(l.id) === String(listingId));
+    if (listing) {
+      await sendPropertyInquiryForListing(listing);
+    }
+  }
 
   // Background active sync polling
   clearInterval(chatSyncInterval);
@@ -2836,20 +2843,36 @@ function generateMessageHtml(m, isPending = false) {
     `;
   }
   // If property inquiry attachment
-  else if (m.listing_title) {
-    const img = (m.listing_images && m.listing_images.length > 0) ? m.listing_images[0] : 'https://images.unsplash.com/photo-1500382017468-9049fed747ef?w=200';
+  else if (m.listing_title || m.listing_id) {
+    const matchedListing = (m.listing_id && allListings) ? allListings.find(l => String(l.id) === String(m.listing_id)) : null;
+    const lTitle = m.listing_title || (matchedListing ? matchedListing.title : 'Land Parcel');
+    const lPrice = m.listing_price || (matchedListing ? matchedListing.price : 0);
+    const lImages = m.listing_images || (matchedListing ? matchedListing.images : []);
+    const lType = (matchedListing ? matchedListing.property_type : 'Land');
+    const targetListingId = m.listing_id || (matchedListing ? matchedListing.id : null);
+    const img = (lImages && lImages.length > 0) ? lImages[0] : 'https://images.unsplash.com/photo-1500382017468-9049fed747ef?w=200';
+
     messageContentHtml = `
-      <div class="mb-2 p-2 bg-slate-50 border border-slate-200 rounded-xl cursor-pointer hover:bg-slate-100 transition shadow-sm" onclick="openPropertyDetails(${m.listing_id})">
-        <div class="flex items-center gap-2">
-          <img src="${img}" onerror="this.onerror=null; this.src='https://images.unsplash.com/photo-1500382017468-9049fed747ef?w=200';" class="w-12 h-12 rounded-lg object-cover flex-shrink-0 border border-slate-200">
-          <div class="truncate">
-            <div class="text-[9px] uppercase font-bold text-wa-teal">Land Parcel Inquiry</div>
-            <div class="font-bold text-xs text-slate-800 truncate">${escapeHTML(m.listing_title)}</div>
-            <div class="text-[10px] text-emerald-700 font-extrabold">₹${Number(m.listing_price || 0).toLocaleString('en-IN')}</div>
+      <div class="mb-2 p-2 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-xl cursor-pointer transition shadow-xs group select-none" 
+           onclick="event.stopPropagation(); ${targetListingId ? `openPropertyDetails(${targetListingId})` : ''}" 
+           title="Tap to view full plot details">
+        <div class="flex items-center gap-2.5">
+          <img src="${img}" onerror="this.onerror=null; this.src='https://images.unsplash.com/photo-1500382017468-9049fed747ef?w=200';" 
+               class="w-14 h-14 rounded-xl object-cover flex-shrink-0 border border-slate-200 shadow-xs group-hover:scale-105 transition-transform">
+          <div class="truncate flex-1 min-w-0">
+            <div class="flex items-center gap-1.5">
+              <span class="text-[9px] uppercase font-bold text-wa-teal bg-emerald-50 px-1.5 py-0.2 rounded">${escapeHTML(lType)}</span>
+              <span class="text-[9px] text-slate-400 font-medium">Verified Plot</span>
+            </div>
+            <div class="font-bold text-xs text-slate-800 truncate mt-0.5 group-hover:text-wa-teal transition">${escapeHTML(lTitle)}</div>
+            <div class="text-[11px] text-emerald-700 font-extrabold mt-0.5">₹${Number(lPrice || 0).toLocaleString('en-IN')}</div>
+          </div>
+          <div class="text-slate-400 group-hover:text-wa-teal transition pr-1 shrink-0">
+            <i data-lucide="chevron-right" class="w-4 h-4"></i>
           </div>
         </div>
       </div>
-      <p class="leading-relaxed select-text">${escapeHTML(m.content)}</p>
+      <p class="leading-relaxed select-text text-slate-800">${escapeHTML(m.content)}</p>
     `;
   }
 
@@ -2925,35 +2948,74 @@ function hideAttachmentMenu() {
   if (menu) menu.classList.add('hidden');
 }
 
-async function attachListingInChat() {
-  hideAttachmentMenu();
-  if (allListings.length === 0 || !activeChatPeer) return;
+async function sendPropertyInquiryForListing(item, customMessage = null) {
+  if (!item || !activeChatPeer || !currentToken) return;
 
-  const item = allListings[0];
-  const inquiryText = `Inquiring about this verified land plot: ${item.title}`;
+  const targetPeerId = Number(activeChatPeer.id);
+  const myId = currentUser ? Number(currentUser.id) : 0;
+  const isSelf = (myId > 0 && targetPeerId === myId);
 
-  // Optimistic UI
-  const tempId = 'temp_inq_' + Date.now();
+  // Avoid rapid duplicate inquiries within 10s for the exact same listing
+  const cachedMsgs = chatMessagesCache.get(targetPeerId) || [];
+  const recentSameInq = cachedMsgs.filter(m => m.listing_id && String(m.listing_id) === String(item.id)).pop();
+  if (recentSameInq && recentSameInq.created_at) {
+    const diffSec = (Date.now() - new Date(recentSameInq.created_at).getTime()) / 1000;
+    if (diffSec < 10) return;
+  }
+
+  const recipientFirstName = (activeChatPeer.name || 'there').replace(/\s*\(.*?\)$/, '').trim().split(' ')[0];
+  const inquiryText = customMessage || `Hello ${recipientFirstName}! Is this plot still available?`;
+
+  const tempId = 'temp_inq_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5);
   const optimisticMsg = {
     id: tempId,
     tempId: tempId,
-    sender_id: currentUser ? currentUser.id : 0,
-    receiver_id: activeChatPeer.id,
+    sender_id: myId,
+    receiver_id: targetPeerId,
     listing_id: item.id,
     listing_title: item.title,
     listing_price: item.price,
     listing_images: item.images,
     content: inquiryText,
     message_type: 'property_inquiry',
-    created_at: new Date().toISOString()
+    is_read: isSelf ? 1 : 0,
+    created_at: new Date().toISOString(),
+    sender_name: currentUser ? currentUser.name : '',
+    sender_avatar: currentUser ? currentUser.avatar : ''
   };
-  appendMessageToChat(optimisticMsg, true);
 
-  const targetPeerId = Number(activeChatPeer.id);
+  appendMessageToChat(optimisticMsg, !isSelf);
+
   if (!chatMessagesCache.has(targetPeerId)) {
     chatMessagesCache.set(targetPeerId, []);
   }
   chatMessagesCache.get(targetPeerId).push(optimisticMsg);
+
+  // Update in-memory recent conversation & promote to top
+  const nowIso = new Date().toISOString();
+  let conv = recentConversations.find(c => Number(c.peer_id) === targetPeerId);
+  if (!conv) {
+    conv = {
+      peer_id: targetPeerId,
+      peer_name: activeChatPeer.name || 'User',
+      peer_avatar: activeChatPeer.avatar || '',
+      peer_role: activeChatPeer.role || 'buyer',
+      last_message: inquiryText,
+      last_message_type: 'property_inquiry',
+      last_message_time: nowIso,
+      last_message_sender_id: myId,
+      last_message_is_read: isSelf ? 1 : 0,
+      unread_count: 0
+    };
+    recentConversations.unshift(conv);
+  } else {
+    conv.last_message = inquiryText;
+    conv.last_message_type = 'property_inquiry';
+    conv.last_message_time = nowIso;
+    conv.last_message_sender_id = myId;
+    conv.last_message_is_read = isSelf ? 1 : 0;
+  }
+  renderContactsList();
 
   // 1. Instant WebSocket dispatch
   if (ws && ws.readyState === WebSocket.OPEN) {
@@ -2961,7 +3023,7 @@ async function attachListingInChat() {
       ws.send(JSON.stringify({
         type: 'chat_message',
         tempId: tempId,
-        receiver_id: activeChatPeer.id,
+        receiver_id: targetPeerId,
         listing_id: item.id,
         content: inquiryText,
         message_type: 'property_inquiry',
@@ -2971,7 +3033,9 @@ async function attachListingInChat() {
         sender_name: currentUser ? currentUser.name : '',
         sender_avatar: currentUser ? currentUser.avatar : ''
       }));
-    } catch (e) {}
+    } catch (e) {
+      console.warn('WS send property inquiry error:', e);
+    }
   }
 
   // 2. HTTP persistence
@@ -2984,7 +3048,7 @@ async function attachListingInChat() {
       },
       body: JSON.stringify({
         tempId: tempId,
-        receiver_id: activeChatPeer.id,
+        receiver_id: targetPeerId,
         listing_id: item.id,
         content: inquiryText,
         message_type: 'property_inquiry',
@@ -3002,6 +3066,13 @@ async function attachListingInChat() {
   } catch (err) {
     console.error('Error attaching listing:', err);
   }
+}
+
+async function attachListingInChat() {
+  hideAttachmentMenu();
+  if (allListings.length === 0 || !activeChatPeer) return;
+  const item = (activePropertyDetailListing || selectedMapListing || allListings[0]);
+  await sendPropertyInquiryForListing(item);
 }
 
 async function createMeetingRoom() {
@@ -5864,7 +5935,7 @@ function callListingOwnerFromMap() {
 function chatListingOwnerFromMap() {
   const item = selectedMapListing || allListings[0];
   if (item) {
-    startChatWithUser(item.owner_id, escapeQuotes(item.owner_name), escapeQuotes(item.owner_avatar), item.owner_role);
+    startChatWithUser(item.owner_id, escapeQuotes(item.owner_name), escapeQuotes(item.owner_avatar), item.owner_role, item.id);
   }
 }
 
@@ -6469,3 +6540,6 @@ window.initInteractiveLandMap = initInteractiveLandMap;
 window.openSelectedMapPlotDetails = openSelectedMapPlotDetails;
 window.callListingOwnerFromMap = callListingOwnerFromMap;
 window.chatListingOwnerFromMap = chatListingOwnerFromMap;
+window.startChatWithUser = startChatWithUser;
+window.sendPropertyInquiryForListing = sendPropertyInquiryForListing;
+window.attachListingInChat = attachListingInChat;
