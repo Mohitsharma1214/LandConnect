@@ -693,7 +693,7 @@
         </section>
 
         <!-- ================= TAB 4: MAPS & GEOLOCATION ================= -->
-        <section id="tab-map" class="hidden h-full flex flex-col relative pb-20">
+        <section id="tab-map" class="hidden h-full flex flex-col relative pb-20 isolate">
           <div class="p-2.5 bg-white border-b border-slate-200 flex items-center justify-between text-xs z-10 shrink-0 shadow-xs">
             <span class="font-bold text-slate-700 flex items-center gap-1.5">
               <i data-lucide="map-pin" class="w-4 h-4 text-wa-teal"></i>
@@ -712,7 +712,7 @@
             <div id="interactive-land-map" class="w-full h-full z-0"></div>
             <!-- Fit / Recenter Button -->
             <button onclick="recenterLandMap()" 
-                    class="absolute top-3 right-3 z-[400] bg-white/95 hover:bg-white text-slate-700 px-2.5 py-1.5 rounded-xl shadow-md border border-slate-200 transition backdrop-blur flex items-center gap-1 text-[11px] font-semibold"
+                    class="absolute top-3 right-3 z-10 bg-white/95 hover:bg-white text-slate-700 px-2.5 py-1.5 rounded-xl shadow-md border border-slate-200 transition backdrop-blur flex items-center gap-1 text-[11px] font-semibold"
                     title="Fit all land plots on map">
               <i data-lucide="crosshair" class="w-3.5 h-3.5 text-wa-teal"></i>
               <span>Fit All Lands</span>
@@ -720,7 +720,7 @@
           </div>
 
           <!-- Bottom Floating Selected Plot Card -->
-          <div id="map-selected-card" class="absolute bottom-4 left-3 right-3 bg-white/95 backdrop-blur-md p-2.5 rounded-2xl shadow-xl border border-slate-200 z-[400] transition-all">
+          <div id="map-selected-card" class="absolute bottom-4 left-3 right-3 bg-white/95 backdrop-blur-md p-2.5 rounded-2xl shadow-xl border border-slate-200 z-10 transition-all">
             <div class="flex items-center gap-2.5">
               <img id="map-card-img" src="https://images.unsplash.com/photo-1500382017468-9049fed747ef?w=200" 
                    class="w-14 h-14 rounded-xl object-cover shrink-0 cursor-pointer border border-slate-200 shadow-xs" 
@@ -1260,7 +1260,7 @@
     </div>
 
     <!-- ================= AUDIO / VIDEO CALL MODAL (FULLSCREEN OVERLAY) ================= -->
-    <div id="call-modal" class="hidden absolute inset-0 bg-slate-950 flex flex-col z-50 text-white select-none">
+    <div id="call-modal" class="hidden absolute inset-0 bg-slate-950 flex flex-col z-[2000] text-white select-none">
       <div class="p-4 flex items-center justify-between bg-black/40 backdrop-blur-md">
         <div class="flex items-center gap-2">
           <div class="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping"></div>
@@ -1331,7 +1331,7 @@
     </div>
 
     <!-- ================= INCOMING CALL DIALOG MODAL ================= -->
-    <div id="incoming-call-modal" class="hidden absolute inset-0 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-6 z-50">
+    <div id="incoming-call-modal" class="hidden absolute inset-0 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-6 z-[2100]">
       <div class="bg-slate-900 border border-slate-700 w-full max-w-sm rounded-3xl p-6 text-center shadow-2xl text-white space-y-4 animate-bounce-short">
         <div class="relative inline-block">
           <img id="incoming-avatar" src="" class="w-20 h-20 rounded-full border-4 border-wa-green object-cover mx-auto">
@@ -1363,7 +1363,7 @@
     </div>
 
     <!-- ================= MULTI-PARTY VIRTUAL MEETING ROOM MODAL ================= -->
-    <div id="meeting-room-modal" class="hidden absolute inset-0 bg-slate-950 flex flex-col z-50 text-white select-none">
+    <div id="meeting-room-modal" class="hidden absolute inset-0 bg-slate-950 flex flex-col z-[2000] text-white select-none">
       <!-- Top Bar -->
       <div class="px-3.5 py-2.5 bg-black/60 backdrop-blur-md border-b border-white/10 flex items-center justify-between gap-2 shrink-0 z-20">
         <div class="flex items-center gap-2.5 min-w-0">
