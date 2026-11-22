@@ -12,6 +12,33 @@ window.alert = function(msg) {
   }
 };
 
+function getInitialsAvatar(name = 'User', role = '') {
+  const cleanName = (name || 'User').replace(/\s*\(.*?\)$/, '').trim();
+  const parts = cleanName.split(/\s+/).filter(Boolean);
+  let initials = 'U';
+  if (parts.length >= 2) {
+    initials = (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+  } else if (parts.length === 1 && parts[0].length > 0) {
+    initials = parts[0].slice(0, 2).toUpperCase();
+  }
+  let bg = '075E54';
+  const roleLower = String(role || '').toLowerCase();
+  if (roleLower === 'buyer') bg = '1E3A8A';
+  else if (roleLower === 'seller') bg = '065F46';
+  else if (roleLower === 'broker') bg = '581C87';
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100" viewBox="0 0 100 100"><rect width="100" height="100" rx="50" fill="%23${bg}"/><text x="50%" y="54%" text-anchor="middle" dominant-baseline="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif" font-weight="700" font-size="38" fill="%23FFFFFF">${initials}</text></svg>`;
+  return `data:image/svg+xml;utf8,${svg}`;
+}
+
+function handleAvatarError(imgEl, name, role) {
+  if (!imgEl) return;
+  imgEl.onerror = null;
+  imgEl.src = getInitialsAvatar(name, role);
+}
+
+window.getInitialsAvatar = getInitialsAvatar;
+window.handleAvatarError = handleAvatarError;
+
 // --- State Variables ---
 let currentToken = localStorage.getItem('landconnect_token') || null;
 let currentUser = null;
@@ -517,7 +544,7 @@ function applyUserRoleUI() {
 
   const role = (currentUser.role || 'buyer').toLowerCase();
   const roleDisplay = role.charAt(0).toUpperCase() + role.slice(1);
-  const defaultAvatar = `https://ui-avatars.com/api/?name=${encodeURIComponent(currentUser.name || 'User')}&background=075E54&color=fff`;
+  const defaultAvatar = getInitialsAvatar(currentUser.name || 'User', currentUser.role);
   const avatarSrc = currentUser.avatar || defaultAvatar;
 
   // Header
@@ -525,8 +552,8 @@ function applyUserRoleUI() {
   const avatarImg = document.getElementById('header-avatar');
   if (roleText) roleText.textContent = roleDisplay;
   if (avatarImg) {
-    avatarImg.src = avatarSrc;
     avatarImg.onerror = () => { avatarImg.src = defaultAvatar; };
+    avatarImg.src = avatarSrc;
   }
 
   // Profile Tab
@@ -1355,7 +1382,7 @@ function renderContactsList() {
     return {
       id: Number(u.id),
       name: u.name,
-      avatar: u.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(u.name)}&background=075E54&color=fff`,
+      avatar: u.avatar || getInitialsAvatar(u.name, u.role),
       role: u.role,
       phone_masked: u.phone_masked,
       last_message: conv ? conv.last_message : null,
@@ -1376,7 +1403,7 @@ function renderContactsList() {
     entries.unshift({
       id: myId,
       name: `${currentUser.name} (You)`,
-      avatar: currentUser.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(currentUser.name)}&background=075E54&color=fff`,
+      avatar: currentUser.avatar || getInitialsAvatar(currentUser.name, currentUser.role),
       role: currentUser.role || 'user',
       phone_masked: currentUser.phone_masked || currentUser.phone || '',
       last_message: selfConv ? selfConv.last_message : null,
@@ -1497,7 +1524,7 @@ function renderChatRowHtml(u, isArchivedView = false) {
          class="group px-3.5 py-3 flex items-center justify-between hover:bg-slate-50 active:bg-slate-100 cursor-pointer transition select-none ${u.is_pinned ? 'bg-emerald-50/40 border-l-4 border-wa-teal' : ''}">
       <div class="flex items-center gap-3 min-w-0 flex-1 pr-2">
         <div class="relative shrink-0" onclick="event.stopPropagation(); openContactProfile(${u.id})" title="View profile & status">
-          <img src="${u.avatar}" onerror="this.src='https://ui-avatars.com/api/?name=${encodeURIComponent(u.name)}&background=075E54&color=fff'" 
+          <img src="${u.avatar || getInitialsAvatar(u.name, u.role)}" onerror="handleAvatarError(this, '${escapeQuotes(u.name)}', '${u.role}')" 
                class="w-11 h-11 rounded-full object-cover border border-slate-200 hover:opacity-85 transition transform hover:scale-105">
           <span class="absolute bottom-0 right-0 w-3 h-3 rounded-full ${isOnline ? 'bg-emerald-500 ring-2 ring-white' : 'bg-slate-300 ring-2 ring-white'}"></span>
         </div>
@@ -1563,7 +1590,7 @@ function renderArchivedContactsList() {
     return {
       id: Number(u.id),
       name: u.name,
-      avatar: u.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(u.name)}&background=075E54&color=fff`,
+      avatar: u.avatar || getInitialsAvatar(u.name, u.role),
       role: u.role,
       phone_masked: u.phone_masked,
       last_message: conv ? conv.last_message : null,
@@ -1739,7 +1766,8 @@ function updateFloatingTypingUI() {
 
   if (activeChatPeer && peerTypingMap.has(Number(activeChatPeer.id))) {
     if (floatingAvatar) {
-      floatingAvatar.src = activeChatPeer.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(activeChatPeer.name)}&background=075E54&color=fff`;
+      floatingAvatar.onerror = () => { floatingAvatar.src = getInitialsAvatar(activeChatPeer.name, activeChatPeer.role); };
+      floatingAvatar.src = activeChatPeer.avatar || getInitialsAvatar(activeChatPeer.name, activeChatPeer.role);
     }
     const wasHidden = floatingEl.classList.contains('hidden');
     floatingEl.classList.remove('hidden');
@@ -1804,9 +1832,9 @@ async function startChatWithUser(userId, name, avatar, role) {
   if (peerAvatar) {
     peerAvatar.onerror = function() {
       this.onerror = null;
-      this.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(displayName || 'User')}&background=075E54&color=fff`;
+      this.src = getInitialsAvatar(displayName, role);
     };
-    peerAvatar.src = avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(displayName || 'User')}&background=075E54&color=fff`;
+    peerAvatar.src = avatar || getInitialsAvatar(displayName, role);
   }
   if (peerRole) peerRole.textContent = role;
 
@@ -1964,11 +1992,14 @@ function renderContactProfileUI(user, isLoadingListings = false) {
                         userRole === 'broker' ? 'Certified RERA Real Estate Broker specializing in greenfield projects & high ROI land.' :
                         'Individual investor looking for agricultural and residential land parcels.';
   const bioText = (user.bio && user.bio.trim()) ? user.bio.trim() : defaultStatus;
-  const avatarUrl = user.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(user.name)}&background=075E54&color=fff`;
+  const avatarUrl = user.avatar || getInitialsAvatar(user.name, user.role);
 
   // 1. Hero info
   const avatarEl = document.getElementById('cp-avatar');
-  if (avatarEl) avatarEl.src = avatarUrl;
+  if (avatarEl) {
+    avatarEl.onerror = () => { avatarEl.src = getInitialsAvatar(user.name, user.role); };
+    avatarEl.src = avatarUrl;
+  }
 
   const nameEl = document.getElementById('cp-name');
   if (nameEl) nameEl.textContent = isSelf ? `${(user.name || 'User').replace(/\s*\(You\)$/, '')} (You)` : (user.name || 'User');
@@ -2243,11 +2274,12 @@ function openAvatarFullscreen(customUrl, customName) {
   if (!modal || !img) return;
 
   const targetName = customName || (currentViewingContact ? currentViewingContact.name : 'Profile Photo');
-  const targetAvatar = customUrl || (currentViewingContact ? currentViewingContact.avatar : null) || `https://ui-avatars.com/api/?name=${encodeURIComponent(targetName)}&background=075E54&color=fff`;
+  const targetRole = currentViewingContact ? currentViewingContact.role : '';
+  const targetAvatar = customUrl || (currentViewingContact ? currentViewingContact.avatar : null) || getInitialsAvatar(targetName, targetRole);
 
   img.src = targetAvatar;
   img.onerror = () => {
-    img.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(targetName)}&background=075E54&color=fff`;
+    img.src = getInitialsAvatar(targetName, targetRole);
   };
   if (name) name.textContent = targetName;
   modal.classList.remove('hidden');
@@ -2281,8 +2313,11 @@ function openSendToChatsView(contact) {
   const bannerSub = document.getElementById('send-to-banner-sub');
   const subtitle = document.getElementById('send-to-subtitle');
 
-  const avatar = contactBeingShared.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(contactBeingShared.name)}&background=075E54&color=fff`;
-  if (bannerAvatar) bannerAvatar.src = avatar;
+  const avatar = contactBeingShared.avatar || getInitialsAvatar(contactBeingShared.name, contactBeingShared.role);
+  if (bannerAvatar) {
+    bannerAvatar.onerror = () => { bannerAvatar.src = getInitialsAvatar(contactBeingShared.name, contactBeingShared.role); };
+    bannerAvatar.src = avatar;
+  }
   if (bannerName) bannerName.textContent = contactBeingShared.name;
   if (bannerSub) bannerSub.textContent = `${(contactBeingShared.role||'user').toUpperCase()} • ${contactBeingShared.phone_masked || '+91 98*** **321'}`;
   if (subtitle) subtitle.textContent = `Select contact to share ${contactBeingShared.name}`;
@@ -2354,7 +2389,7 @@ function renderSendToChatsList() {
 
   container.innerHTML = availableContacts.map(u => {
     const isOnline = onlineUserIds.has(Number(u.id));
-    const avatar = u.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(u.name)}&background=075E54&color=fff`;
+    const avatar = u.avatar || getInitialsAvatar(u.name, u.role);
     const role = (u.role || 'user').toLowerCase();
     const roleBadgeClass = role === 'buyer' ? 'bg-blue-100 text-blue-700' :
                            role === 'seller' ? 'bg-emerald-100 text-emerald-700' :
@@ -2365,7 +2400,7 @@ function renderSendToChatsList() {
            class="px-3.5 py-3 flex items-center justify-between hover:bg-slate-50 active:bg-slate-100 cursor-pointer transition select-none group">
         <div class="flex items-center gap-3 min-w-0 flex-1 pr-2">
           <div class="relative shrink-0">
-            <img src="${avatar}" onerror="this.src='https://ui-avatars.com/api/?name=${encodeURIComponent(u.name)}&background=075E54&color=fff'" 
+            <img src="${avatar}" onerror="handleAvatarError(this, '${escapeQuotes(u.name)}', '${role}')" 
                  class="w-11 h-11 rounded-full object-cover border border-slate-200">
             <span class="absolute bottom-0 right-0 w-3 h-3 rounded-full ${isOnline ? 'bg-emerald-500 ring-2 ring-white' : 'bg-slate-300 ring-2 ring-white'}"></span>
           </div>
@@ -2684,7 +2719,7 @@ function generateMessageHtml(m, isPending = false) {
     const contactPhone = m.contact_phone || (phoneMatch ? phoneMatch[1].trim() : '+91 98*** **321');
     const contactObj = allUsers.find(u => u.name.toLowerCase() === contactName.toLowerCase());
     const contactId = m.contact_id || (contactObj ? contactObj.id : null);
-    const contactAvatar = m.contact_avatar || (contactObj ? contactObj.avatar : `https://ui-avatars.com/api/?name=${encodeURIComponent(contactName)}&background=075E54&color=fff`);
+    const contactAvatar = m.contact_avatar || (contactObj ? contactObj.avatar : getInitialsAvatar(contactName, contactRole));
     const roleBadgeClass = contactRole === 'buyer' ? 'bg-blue-100 text-blue-700' :
                            contactRole === 'seller' ? 'bg-emerald-100 text-emerald-700' :
                            'bg-purple-100 text-purple-700';
@@ -2692,7 +2727,7 @@ function generateMessageHtml(m, isPending = false) {
     messageContentHtml = `
       <div class="bg-white text-slate-800 p-3 rounded-2xl shadow-sm border border-slate-200/90 my-1 max-w-[270px]">
         <div class="flex items-center gap-3">
-          <img src="${contactAvatar}" onerror="this.src='https://ui-avatars.com/api/?name=${encodeURIComponent(contactName)}&background=075E54&color=fff'" class="w-11 h-11 rounded-full object-cover border border-slate-200 shrink-0">
+          <img src="${contactAvatar}" onerror="handleAvatarError(this, '${escapeQuotes(contactName)}', '${contactRole}')" class="w-11 h-11 rounded-full object-cover border border-slate-200 shrink-0">
           <div class="min-w-0 flex-1">
             <div class="flex items-center gap-1.5">
               <h4 class="font-bold text-xs text-slate-900 truncate">${escapeQuotes(contactName)}</h4>
@@ -4213,7 +4248,7 @@ function renderMeetingInviteContacts(filter = '') {
   }
 
   listEl.innerHTML = filteredUsers.map(u => {
-    const avatar = u.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(u.name)}&background=075E54&color=fff`;
+    const avatar = u.avatar || getInitialsAvatar(u.name, u.role);
     const roleColors = {
       buyer: 'bg-blue-100 text-blue-700 border-blue-200',
       seller: 'bg-emerald-100 text-emerald-800 border-emerald-200',
@@ -4418,7 +4453,10 @@ async function joinMultiPartyMeetingRoom(roomId) {
   if (roomBadge) roomBadge.textContent = roomId;
   if (localName) localName.textContent = currentUser.name || 'You';
   if (localRole) localRole.textContent = (currentUser.role || 'Buyer').toUpperCase();
-  if (localAvatar) localAvatar.src = currentUser.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(currentUser.name)}&background=075E54&color=fff`;
+  if (localAvatar) {
+    localAvatar.onerror = () => { localAvatar.src = getInitialsAvatar(currentUser.name, currentUser.role); };
+    localAvatar.src = currentUser.avatar || getInitialsAvatar(currentUser.name, currentUser.role);
+  }
 
   // Update address bar query without reload
   try {
@@ -4599,7 +4637,7 @@ function renderMeetingPeerTile(peerId, info) {
   tile.id = `meeting-tile-${peerId}`;
   tile.className = 'meeting-peer-tile relative bg-slate-900 rounded-2xl overflow-hidden border border-white/10 shadow-lg flex items-center justify-center w-full h-full min-h-0 transition-all duration-300';
 
-  const avatarUrl = info.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(info.name || 'User')}&background=075E54&color=fff`;
+  const avatarUrl = info.avatar || getInitialsAvatar(info.name || 'User', info.role);
   const roleLower = (info.role || 'Member').toLowerCase();
   const roleName = (info.role || 'Member').toUpperCase();
 
@@ -5715,13 +5753,16 @@ function openEditProfileModal() {
     return;
   }
 
-  const defaultAvatar = `https://ui-avatars.com/api/?name=${encodeURIComponent(currentUser.name || 'User')}&background=075E54&color=fff`;
+  const defaultAvatar = getInitialsAvatar(currentUser.name || 'User', currentUser.role);
   const avatarSrc = currentUser.avatar || defaultAvatar;
 
   const nameInput = document.getElementById('edit-profile-name');
   const bioInput = document.getElementById('edit-profile-bio');
   const avatarUrlInput = document.getElementById('edit-profile-avatar-url');
   const avatarPreview = document.getElementById('edit-profile-avatar-preview');
+  if (avatarPreview) {
+    avatarPreview.onerror = () => { avatarPreview.src = defaultAvatar; };
+  }
   const emailDisplay = document.getElementById('edit-profile-email-display');
   const phoneDisplay = document.getElementById('edit-profile-phone-display');
   const statusEl = document.getElementById('edit-profile-upload-status');

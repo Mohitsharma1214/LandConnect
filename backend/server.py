@@ -276,11 +276,64 @@ async def api_update_profile(request):
 STORAGE_BUCKET_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "storage_bucket")
 os.makedirs(STORAGE_BUCKET_DIR, exist_ok=True)
 
-S3_BUCKET_NAME = os.getenv("S3_BUCKET_NAME") or os.getenv("AWS_S3_BUCKET")
-AWS_ACCESS_KEY_ID = os.getenv("AWS_ACCESS_KEY_ID")
-AWS_SECRET_ACCESS_KEY = os.getenv("AWS_SECRET_ACCESS_KEY")
-AWS_ENDPOINT_URL = os.getenv("AWS_ENDPOINT_URL") or os.getenv("AWS_ENDPOINT_URL_S3") or os.getenv("S3_ENDPOINT_URL")
+S3_BUCKET_NAME = os.getenv("S3_BUCKET_NAME") or os.getenv("AWS_S3_BUCKET") or "uploads"
+AWS_ACCESS_KEY_ID = os.getenv("AWS_ACCESS_KEY_ID") or "nak_live_9406bff379fb46609f5f7e7fd905f72e"
+AWS_SECRET_ACCESS_KEY = os.getenv("AWS_SECRET_ACCESS_KEY") or "nsk_live_fc181a459fa6ba3e37af4428f7f6f4e49a192b9c40c27c9154e760ce53d6391d"
+AWS_ENDPOINT_URL = os.getenv("AWS_ENDPOINT_URL") or os.getenv("AWS_ENDPOINT_URL_S3") or os.getenv("S3_ENDPOINT_URL") or "https://br-soft-credit-bdxw0gxn.storage.c-8.us-east-2.aws.neon.tech"
 AWS_REGION = os.getenv("AWS_REGION", "us-east-2")
+
+async def serve_bucket_file(request):
+    """
+    Serve bucket files from local storage if available; otherwise proxy/stream
+    directly from Neon Object Storage S3 bucket and cache locally.
+    Never return a 404 broken image: fallback to an SVG avatar.
+    """
+    filename = request.path_params.get("filename", "")
+    target_path = os.path.join(STORAGE_BUCKET_DIR, filename)
+    if os.path.exists(target_path) and os.path.isfile(target_path):
+        return FileResponse(target_path)
+
+    # Attempt fetch from Neon Object Storage (S3)
+    if S3_BUCKET_NAME and AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY:
+        try:
+            import boto3
+            from botocore.client import Config
+            client_kwargs = {
+                "aws_access_key_id": AWS_ACCESS_KEY_ID,
+                "aws_secret_access_key": AWS_SECRET_ACCESS_KEY,
+                "region_name": AWS_REGION,
+                "config": Config(s3={'addressing_style': 'path'})
+            }
+            if AWS_ENDPOINT_URL:
+                client_kwargs["endpoint_url"] = AWS_ENDPOINT_URL
+            s3 = boto3.client("s3", **client_kwargs)
+            obj = await asyncio.to_thread(s3.get_object, Bucket=S3_BUCKET_NAME, Key=filename)
+            body = await asyncio.to_thread(obj['Body'].read)
+            content_type = obj.get('ContentType', '')
+            if not content_type or content_type == 'binary/octet-stream':
+                ext = os.path.splitext(filename)[1].lower()
+                content_type = 'image/png' if ext == '.png' else ('image/svg+xml' if ext == '.svg' else 'image/jpeg')
+            try:
+                with open(target_path, "wb") as f:
+                    f.write(body)
+            except Exception:
+                pass
+            return Response(body, media_type=content_type, headers={"Cache-Control": "public, max-age=86400"})
+        except Exception as s3_err:
+            print(f"Warning: Failed to fetch {filename} from S3 bucket: {s3_err}")
+
+    # Fallback SVG so image never breaks
+    initials = "LC"
+    clean_stem = os.path.splitext(filename)[0]
+    if "_" in clean_stem:
+        parts = clean_stem.split("_")
+        if len(parts) > 1 and parts[1]:
+            initials = parts[1][:2].upper()
+    svg_fallback = f'''<svg xmlns="http://www.w3.org/2000/svg" width="120" height="120" viewBox="0 0 120 120">
+  <rect width="120" height="120" rx="60" fill="#075E54"/>
+  <text x="50%" y="54%" text-anchor="middle" dominant-baseline="middle" font-family="-apple-system,sans-serif" font-weight="bold" font-size="44" fill="#FFFFFF">{initials}</text>
+</svg>'''
+    return Response(svg_fallback, media_type="image/svg+xml", headers={"Cache-Control": "no-cache"})
 
 async def api_upload_image(request):
     auth_header = request.headers.get("Authorization", "")
@@ -1199,6 +1252,7 @@ routes = [
     Route("/api/calls/history", api_call_logs, methods=["GET"]),
     Route("/api/meeting-rooms/history", api_meeting_room_history, methods=["GET"]),
     WebSocketRoute("/ws", websocket_signaling),
+    Route("/bucket/{filename:path}", serve_bucket_file),
     Route("/sw.js", serve_sw),
     Route("/manifest.json", serve_manifest),
     Route("/", serve_index),
@@ -1212,9 +1266,6 @@ app = Starlette(debug=True, routes=routes, middleware=middleware)
 
 if os.path.exists(FRONTEND_DIR):
     app.mount("/static", StaticFiles(directory=FRONTEND_DIR), name="static")
-
-if os.path.exists(STORAGE_BUCKET_DIR):
-    app.mount("/bucket", StaticFiles(directory=STORAGE_BUCKET_DIR), name="bucket")
 
 if __name__ == "__main__":
     import uvicorn
