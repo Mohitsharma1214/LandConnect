@@ -161,10 +161,18 @@ async def api_register(request):
         email = data.get("email", "").strip()
         password = data.get("password", "")
         role = data.get("role", "buyer").strip().lower()
-        phone = data.get("phone", "")
+        phone = data.get("phone", "").strip()
 
-        if not name or not email or not password:
-            return JSONResponse({"error": "Name, email, and password are required."}, status_code=400)
+        if not name:
+            return JSONResponse({"error": "Full Name is required."}, status_code=400)
+        if not email:
+            return JSONResponse({"error": "Email address is required."}, status_code=400)
+        if not phone:
+            return JSONResponse({"error": "Mobile number is required."}, status_code=400)
+        if not password:
+            return JSONResponse({"error": "Password is required."}, status_code=400)
+        if len(password) < 8:
+            return JSONResponse({"error": "Password must be at least 8 characters long."}, status_code=400)
         
         result = register_user(name, email, password, role, phone)
         if "error" in result:

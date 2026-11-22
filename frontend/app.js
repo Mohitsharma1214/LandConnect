@@ -421,6 +421,16 @@ async function submitRegister(e) {
   const role = selectedRoleForReg || 'buyer';
   const submitBtn = document.getElementById('btn-reg-submit');
 
+  const cleanPhone = phone.replace(/\D/g, '');
+  if (!cleanPhone || cleanPhone.length < 10) {
+    showAuthFeedback('Please enter a valid 10-digit mobile number.');
+    return;
+  }
+  if (!password || password.length < 8) {
+    showAuthFeedback('Password must be at least 8 characters long.');
+    return;
+  }
+
   if (submitBtn) submitBtn.disabled = true;
 
   try {

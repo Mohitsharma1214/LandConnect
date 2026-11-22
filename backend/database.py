@@ -100,11 +100,13 @@ def init_db():
         password_hash VARCHAR(255) NOT NULL,
         role VARCHAR(50) NOT NULL CHECK(role IN ('buyer', 'seller', 'broker')),
         phone_masked VARCHAR(50) NOT NULL,
+        phone VARCHAR(50),
         avatar TEXT,
         bio TEXT,
         created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
     );
     """)
+    cursor.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS phone VARCHAR(50);")
 
     # Land Listings Table
     cursor.execute("""

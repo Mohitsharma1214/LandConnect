@@ -1,5 +1,6 @@
 import jwt
 import datetime
+import re
 from database import get_connection, hash_password
 
 JWT_SECRET = "landconnect_secure_jwt_token_key_2026"
@@ -27,11 +28,21 @@ def register_user(name: str, email: str, password: str, role: str, phone: str = 
     if role not in ("buyer", "seller", "broker"):
         return {"error": "Invalid role. Must be 'buyer', 'seller', or 'broker'."}
     
-    if phone and len(phone) >= 10:
-        clean_phone = phone.strip()
-        masked_phone = f"{clean_phone[:3]}*** **{clean_phone[-3:]}"
-    else:
-        masked_phone = "+91 98*** **000"
+    # Enforce minimum 8 characters password length
+    if not password or len(password) < 8:
+        return {"error": "Password must be at least 8 characters long."}
+
+    # Enforce valid mobile number (minimum 10 digits)
+    phone_clean = re.sub(r'\D', '', phone or "").strip()
+    if len(phone_clean) < 10:
+        return {"error": "A valid 10-digit mobile number is required."}
+
+    phone_10 = phone_clean[-10:]
+    masked_phone = f"{phone_10[:3]}*** **{phone_10[-3:]}"
+    clean_email = email.lower().strip()
+
+    if not clean_email or "@" not in clean_email:
+        return {"error": "A valid email address is required."}
 
     avatar_by_role = {
         "buyer": "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80",
@@ -42,21 +53,31 @@ def register_user(name: str, email: str, password: str, role: str, phone: str = 
     conn = get_connection()
     cursor = conn.cursor()
     try:
+        # Check email uniqueness
+        cursor.execute("SELECT id FROM users WHERE LOWER(email) = %s", (clean_email,))
+        if cursor.fetchone():
+            return {"error": "An account with this email address already exists."}
+
+        # Check mobile number uniqueness across all accounts
+        cursor.execute("SELECT id FROM users WHERE phone = %s OR (phone IS NULL AND phone_masked = %s)", (phone_10, masked_phone))
+        if cursor.fetchone():
+            return {"error": "An account with this mobile number already exists. Each mobile number can only be used once."}
+
         password_hash = hash_password(password)
         cursor.execute("""
-            INSERT INTO users (name, email, password_hash, role, phone_masked, avatar)
-            VALUES (%s, %s, %s, %s, %s, %s)
+            INSERT INTO users (name, email, password_hash, role, phone_masked, phone, avatar)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
             RETURNING id;
-        """, (name, email.lower().strip(), password_hash, role, masked_phone, avatar_by_role.get(role)))
+        """, (name, clean_email, password_hash, role, masked_phone, phone_10, avatar_by_role.get(role)))
         user_id = cursor.fetchone()["id"]
         conn.commit()
-        token = create_jwt_token(user_id, role, email)
+        token = create_jwt_token(user_id, role, clean_email)
         return {
             "token": token,
             "user": {
                 "id": user_id,
                 "name": name,
-                "email": email,
+                "email": clean_email,
                 "role": role,
                 "phone_masked": masked_phone,
                 "avatar": avatar_by_role.get(role)
@@ -64,8 +85,11 @@ def register_user(name: str, email: str, password: str, role: str, phone: str = 
         }
     except Exception as e:
         conn.rollback()
-        if "unique constraint" in str(e).lower() or "duplicate key" in str(e).lower():
-            return {"error": "An account with this email already exists."}
+        err_str = str(e).lower()
+        if "users_email_key" in err_str or ("email" in err_str and "unique" in err_str):
+            return {"error": "An account with this email address already exists."}
+        if "phone" in err_str and "unique" in err_str:
+            return {"error": "An account with this mobile number already exists."}
         return {"error": str(e)}
     finally:
         cursor.close()
