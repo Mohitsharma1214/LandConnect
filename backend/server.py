@@ -1232,6 +1232,12 @@ async def serve_manifest(request):
         return FileResponse(m_file, media_type="application/manifest+json")
     return Response("{}", media_type="application/manifest+json")
 
+async def serve_favicon(request):
+    fav = os.path.join(FRONTEND_DIR, "icons", "favicon.ico")
+    if os.path.exists(fav):
+        return FileResponse(fav, media_type="image/x-icon")
+    return Response(status_code=404)
+
 routes = [
     Route("/api/auth/register", api_register, methods=["POST"]),
     Route("/api/auth/login", api_login, methods=["POST"]),
@@ -1255,6 +1261,7 @@ routes = [
     Route("/bucket/{filename:path}", serve_bucket_file),
     Route("/sw.js", serve_sw),
     Route("/manifest.json", serve_manifest),
+    Route("/favicon.ico", serve_favicon),
     Route("/", serve_index),
 ]
 

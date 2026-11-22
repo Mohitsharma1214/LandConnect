@@ -1,9 +1,12 @@
-const CACHE_NAME = 'landconnect-v1';
+const CACHE_NAME = 'landconnect-v2';
 const ASSETS_TO_CACHE = [
   '/',
   '/static/index.html',
   '/static/app.js',
-  '/manifest.json'
+  '/manifest.json',
+  '/static/icons/icon-192.png',
+  '/static/icons/icon-512.png',
+  '/static/icons/icon.svg'
 ];
 
 self.addEventListener('install', (event) => {

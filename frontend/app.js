@@ -3631,6 +3631,8 @@ function renderCallLogs() {
 }
 
 async function getMediaStream(callType) {
+  currentCameraFacingMode = 'user';
+  isLocalVideoMirrored = true;
   try {
     const constraints = {
       audio: true,
@@ -3767,18 +3769,36 @@ let isScreenSharing = false;
 let screenStream = null;
 
 async function toggleScreenShare() {
-  if (!peerConnection) return;
+  if (!peerConnection) {
+    showToast('No active call connected', 'info');
+    return;
+  }
 
   if (!isScreenSharing) {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
+      showToast('Screen sharing is not supported by your mobile browser (iOS Safari / mobile WebView). Please use Chrome on Android or Desktop.', 'warning');
+      return;
+    }
+
     try {
-      screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true });
+      let stream;
+      try {
+        stream = await navigator.mediaDevices.getDisplayMedia({ video: { cursor: 'always' }, audio: false });
+      } catch (err1) {
+        stream = await navigator.mediaDevices.getDisplayMedia({ video: true });
+      }
+
+      screenStream = stream;
       const screenTrack = screenStream.getVideoTracks()[0];
       const sender = peerConnection.getSenders().find(s => s.track && s.track.kind === 'video');
       if (sender) {
-        sender.replaceTrack(screenTrack);
+        await sender.replaceTrack(screenTrack);
       }
       const localVideo = document.getElementById('local-video');
-      if (localVideo) localVideo.srcObject = screenStream;
+      if (localVideo) {
+        localVideo.srcObject = screenStream;
+        applyVideoMirrorStyle(localVideo, false); // Screen share must NEVER be mirrored
+      }
 
       screenTrack.onended = () => {
         stopScreenShare();
@@ -3787,8 +3807,14 @@ async function toggleScreenShare() {
       isScreenSharing = true;
       const btn = document.getElementById('btn-toggle-screen');
       if (btn) btn.classList.add('bg-emerald-600', 'text-white');
+      showToast('Screen sharing active', 'info');
     } catch (err) {
       console.warn('Screen share cancelled or unsupported:', err);
+      if (err.name === 'NotAllowedError') {
+        showToast('Screen share permission denied or cancelled', 'info');
+      } else {
+        showToast('Screen sharing is restricted on this mobile device', 'warning');
+      }
     }
   } else {
     stopScreenShare();
@@ -3808,11 +3834,15 @@ function stopScreenShare() {
       if (sender) sender.replaceTrack(videoTrack);
     }
     const localVideo = document.getElementById('local-video');
-    if (localVideo) localVideo.srcObject = localStream;
+    if (localVideo) {
+      localVideo.srcObject = localStream;
+      applyVideoMirrorStyle(localVideo, isLocalVideoMirrored);
+    }
   }
   isScreenSharing = false;
   const btn = document.getElementById('btn-toggle-screen');
   if (btn) btn.classList.remove('bg-emerald-600', 'text-white');
+  showToast('Screen sharing stopped', 'info');
 }
 
 async function initiateDirectCall(targetUserId, targetName, targetAvatar, targetRole, callType = 'video', listingId = null) {
@@ -3838,7 +3868,10 @@ async function initiateDirectCall(targetUserId, targetName, targetAvatar, target
   updateMuteButtonsUI();
 
   const localVideo = document.getElementById('local-video');
-  if (localVideo) localVideo.srcObject = localStream;
+  if (localVideo) {
+    localVideo.srcObject = localStream;
+    applyVideoMirrorStyle(localVideo, isLocalVideoMirrored);
+  }
 
   setupPeerConnection();
 
@@ -4101,8 +4134,112 @@ function toggleVideoCamera() {
   showToast(isVideoMuted ? 'Camera Turned Off' : 'Camera Turned On', 'info');
 }
 
-function toggleVideoCameraFlip() {
-  showToast('Camera switched (Front / Rear)', 'info');
+let currentCameraFacingMode = 'user'; // 'user' (front) or 'environment' (back)
+let isLocalVideoMirrored = true;
+
+function applyVideoMirrorStyle(videoEl, shouldMirror) {
+  if (!videoEl) return;
+  if (shouldMirror) {
+    videoEl.style.transform = 'scaleX(-1)';
+    videoEl.style.webkitTransform = 'scaleX(-1)';
+  } else {
+    videoEl.style.transform = 'scaleX(1)';
+    videoEl.style.webkitTransform = 'scaleX(1)';
+  }
+}
+
+function toggleVideoMirror() {
+  isLocalVideoMirrored = !isLocalVideoMirrored;
+  const localVideo = document.getElementById('local-video');
+  const meetingLocalVideo = document.getElementById('meeting-local-video');
+  if (localVideo) applyVideoMirrorStyle(localVideo, isLocalVideoMirrored);
+  if (meetingLocalVideo) applyVideoMirrorStyle(meetingLocalVideo, isLocalVideoMirrored);
+  showToast(isLocalVideoMirrored ? 'Video preview mirrored (Selfie mode)' : 'Video preview unmirrored (Normal mode)', 'info');
+}
+
+async function toggleVideoCameraFlip() {
+  const activeStream = (typeof localStream !== 'undefined' && localStream) ? localStream : ((typeof meetingLocalStream !== 'undefined' && meetingLocalStream) ? meetingLocalStream : null);
+  if (!activeStream) {
+    showToast('No active camera stream to flip', 'warning');
+    return;
+  }
+
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    showToast('Camera switching is not supported by this browser', 'warning');
+    return;
+  }
+
+  const newFacing = (currentCameraFacingMode === 'user') ? 'environment' : 'user';
+
+  try {
+    // 1. Get new video stream from the requested camera facing mode
+    let newStream;
+    try {
+      newStream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { exact: newFacing }, width: { ideal: 640 }, height: { ideal: 480 } }
+      });
+    } catch (e) {
+      newStream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: newFacing, width: { ideal: 640 }, height: { ideal: 480 } }
+      });
+    }
+
+    const newVideoTrack = newStream.getVideoTracks()[0];
+    if (!newVideoTrack) {
+      showToast('Could not find requested camera', 'warning');
+      return;
+    }
+
+    // 2. Stop old video track(s)
+    const oldTracks = activeStream.getVideoTracks();
+    oldTracks.forEach(t => {
+      activeStream.removeTrack(t);
+      t.stop();
+    });
+
+    // 3. Add new track to activeStream
+    activeStream.addTrack(newVideoTrack);
+    currentCameraFacingMode = newFacing;
+    isLocalVideoMirrored = (newFacing === 'user');
+
+    // 4. Update local preview elements & mirroring
+    const localVideo = document.getElementById('local-video');
+    if (localVideo) {
+      localVideo.srcObject = activeStream;
+      applyVideoMirrorStyle(localVideo, isLocalVideoMirrored);
+    }
+    const meetingLocalVideo = document.getElementById('meeting-local-video');
+    if (meetingLocalVideo) {
+      meetingLocalVideo.srcObject = activeStream;
+      applyVideoMirrorStyle(meetingLocalVideo, isLocalVideoMirrored);
+    }
+
+    // 5. Replace WebRTC track for 1-on-1 call
+    if (typeof peerConnection !== 'undefined' && peerConnection) {
+      const senders = peerConnection.getSenders();
+      const videoSender = senders.find(s => s.track && s.track.kind === 'video') || senders.find(s => !s.track);
+      if (videoSender) {
+        await videoSender.replaceTrack(newVideoTrack);
+      }
+    }
+
+    // 6. Replace WebRTC track for Meeting Room mesh connections
+    if (typeof meetingPeerConnections !== 'undefined' && meetingPeerConnections.size > 0) {
+      for (const [peerId, pc] of meetingPeerConnections.entries()) {
+        const senders = pc.getSenders();
+        const videoSender = senders.find(s => s.track && s.track.kind === 'video') || senders.find(s => !s.track);
+        if (videoSender) {
+          await videoSender.replaceTrack(newVideoTrack);
+        }
+      }
+    }
+
+    const label = newFacing === 'environment' ? 'Back / Rear Camera' : 'Front / Selfie Camera';
+    showToast(`Turned camera to ${label}`, 'info');
+  } catch (err) {
+    console.warn('Camera flip error:', err);
+    showToast('Could not turn camera: ' + (err.message || 'Permission or hardware restriction'), 'warning');
+  }
 }
 
 function toggleSpeaker() {
@@ -4163,7 +4300,10 @@ async function acceptIncomingCall() {
   updateMuteButtonsUI();
 
   const localVideo = document.getElementById('local-video');
-  if (localVideo) localVideo.srcObject = localStream;
+  if (localVideo) {
+    localVideo.srcObject = localStream;
+    applyVideoMirrorStyle(localVideo, isLocalVideoMirrored);
+  }
 
   setupPeerConnection();
 
@@ -4484,6 +4624,7 @@ async function joinMultiPartyMeetingRoom(roomId) {
   const localVideo = document.getElementById('meeting-local-video');
   if (localVideo) {
     localVideo.srcObject = meetingLocalStream;
+    applyVideoMirrorStyle(localVideo, isLocalVideoMirrored);
   }
 
   isMeetingAudioMuted = false;
@@ -4816,13 +4957,28 @@ function updateMeetingControlsUI() {
 async function toggleMeetingScreenShare() {
   const btn = document.getElementById('btn-meeting-screen');
   if (!isMeetingScreenSharing) {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
+      showToast('Screen sharing is not supported by your mobile browser (iOS Safari / mobile WebView). Please use Chrome on Android or Desktop.', 'warning');
+      return;
+    }
+
     try {
-      meetingScreenStream = await navigator.mediaDevices.getDisplayMedia({ video: true });
+      let stream;
+      try {
+        stream = await navigator.mediaDevices.getDisplayMedia({ video: { cursor: 'always' }, audio: false });
+      } catch(err1) {
+        stream = await navigator.mediaDevices.getDisplayMedia({ video: true });
+      }
+
+      meetingScreenStream = stream;
       const screenTrack = meetingScreenStream.getVideoTracks()[0];
 
-      // Update local preview
+      // Update local preview - unmirrored for readable text
       const localVideo = document.getElementById('meeting-local-video');
-      if (localVideo) localVideo.srcObject = meetingScreenStream;
+      if (localVideo) {
+        localVideo.srcObject = meetingScreenStream;
+        applyVideoMirrorStyle(localVideo, false);
+      }
 
       // Replace track for all connected peers in mesh
       meetingPeerConnections.forEach((pc) => {
@@ -4835,10 +4991,15 @@ async function toggleMeetingScreenShare() {
       };
 
       isMeetingScreenSharing = true;
-      if (btn) btn.className = 'p-3 rounded-full bg-emerald-600 text-white transition';
+      if (btn) btn.className = 'w-12 h-12 rounded-full bg-emerald-600 active:scale-95 text-white flex items-center justify-center transition border border-white/10 shadow-md';
       showToast('Screen sharing started with meeting room participants', 'info');
     } catch(err) {
       console.warn('Screen share canceled or error:', err);
+      if (err.name === 'NotAllowedError') {
+        showToast('Screen share permission denied or cancelled', 'info');
+      } else {
+        showToast('Screen sharing is restricted on this mobile device', 'warning');
+      }
     }
   } else {
     stopMeetingScreenShare();
@@ -4859,12 +5020,15 @@ function stopMeetingScreenShare() {
         if (sender) sender.replaceTrack(videoTrack);
       });
       const localVideo = document.getElementById('meeting-local-video');
-      if (localVideo) localVideo.srcObject = meetingLocalStream;
+      if (localVideo) {
+        localVideo.srcObject = meetingLocalStream;
+        applyVideoMirrorStyle(localVideo, isLocalVideoMirrored);
+      }
     }
   }
   isMeetingScreenSharing = false;
   const btn = document.getElementById('btn-meeting-screen');
-  if (btn) btn.className = 'p-3 rounded-full bg-white/10 hover:bg-white/20 text-white transition';
+  if (btn) btn.className = 'w-12 h-12 rounded-full bg-white/10 hover:bg-white/20 active:scale-95 text-white flex items-center justify-center transition border border-white/10 shadow-md';
   showToast('Screen sharing stopped', 'info');
 }
 

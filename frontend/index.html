@@ -7,7 +7,8 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="LandConnect">
-  <link rel="apple-touch-icon" href="https://img.icons8.com/color/192/whatsapp--v1.png">
+  <link rel="icon" type="image/svg+xml" href="/static/icons/icon.svg">
+  <link rel="apple-touch-icon" href="/static/icons/icon-192.png">
   <link rel="manifest" href="/manifest.json">
   <title>LandConnect – WhatsApp Inspired Real Estate & Calling</title>
   <!-- Tailwind CSS CDN -->
@@ -1157,9 +1158,14 @@
           <h3 id="call-peer-name" class="font-bold text-sm">Vikram Malhotra</h3>
           <p id="call-role-badge" class="text-[10px] text-emerald-300 font-medium uppercase tracking-wide">Direct Seller • Phone Masked</p>
         </div>
-        <button onclick="toggleVideoCameraFlip()" class="p-2 rounded-full hover:bg-white/10 text-white/80">
-          <i data-lucide="refresh-cw" class="w-4 h-4"></i>
-        </button>
+        <div class="flex items-center gap-1">
+          <button onclick="toggleVideoCameraFlip()" class="p-2 rounded-full hover:bg-white/10 text-white/80 transition" title="Turn Camera (Front / Rear)">
+            <i data-lucide="refresh-cw" class="w-4 h-4"></i>
+          </button>
+          <button onclick="toggleVideoMirror()" class="p-2 rounded-full hover:bg-white/10 text-white/80 transition" title="Mirror / Flip Video Preview">
+            <i data-lucide="flip-horizontal" class="w-4 h-4"></i>
+          </button>
+        </div>
       </div>
 
       <div class="flex-1 relative bg-slate-900 flex items-center justify-center overflow-hidden">
@@ -1178,7 +1184,10 @@
         </div>
 
         <div id="local-video-container" class="absolute top-4 right-4 w-24 h-32 bg-slate-800 rounded-xl overflow-hidden border-2 border-white/30 shadow-2xl flex items-center justify-center">
-          <video id="local-video" autoplay playsinline muted class="w-full h-full object-cover"></video>
+          <video id="local-video" autoplay playsinline muted class="w-full h-full object-cover transition-transform duration-300"></video>
+          <button onclick="event.stopPropagation(); toggleVideoCameraFlip()" class="absolute top-1 right-1 bg-black/60 hover:bg-black/80 text-white p-1 rounded-full shadow transition z-10" title="Turn Camera Front / Rear">
+            <i data-lucide="refresh-cw" class="w-3 h-3"></i>
+          </button>
           <div id="local-video-off-placeholder" class="hidden absolute inset-0 bg-slate-900 flex flex-col items-center justify-center text-white/70 text-[9px]">
             <i data-lucide="video-off" class="w-5 h-5 mb-1 text-rose-400"></i>
             <span>Camera Off</span>
@@ -1263,6 +1272,12 @@
         </div>
 
         <div class="flex items-center gap-1.5 shrink-0">
+          <button onclick="toggleVideoCameraFlip()" class="bg-white/10 hover:bg-white/20 active:scale-95 text-white p-2 rounded-xl text-[11px] font-semibold flex items-center gap-1 transition border border-white/10" title="Turn Camera Front / Rear">
+            <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>
+          </button>
+          <button onclick="toggleVideoMirror()" class="bg-white/10 hover:bg-white/20 active:scale-95 text-white p-2 rounded-xl text-[11px] font-semibold flex items-center gap-1 transition border border-white/10" title="Mirror / Flip Video Preview">
+            <i data-lucide="flip-horizontal" class="w-3.5 h-3.5"></i>
+          </button>
           <button onclick="copyMeetingLink()" id="btn-copy-meeting-link" class="bg-white/10 hover:bg-white/20 active:scale-95 text-white px-2.5 py-1.5 rounded-xl text-[11px] font-semibold flex items-center gap-1.5 transition border border-white/10">
             <i data-lucide="copy" class="w-3.5 h-3.5"></i>
             <span id="copy-meeting-link-text" class="whitespace-nowrap">Copy Link</span>
@@ -1279,8 +1294,12 @@
         <div id="meeting-video-grid" class="flex-1 w-full h-full min-h-0 grid grid-cols-1 grid-rows-1 gap-2 overflow-hidden">
           <!-- Local User Tile -->
           <div id="meeting-tile-local" class="meeting-tile relative bg-slate-900 rounded-2xl overflow-hidden border border-white/10 shadow-lg flex items-center justify-center w-full h-full min-h-0 transition-all duration-300">
-            <video id="meeting-local-video" autoplay playsinline muted class="w-full h-full object-cover"></video>
+            <video id="meeting-local-video" autoplay playsinline muted class="w-full h-full object-cover transition-transform duration-300"></video>
             
+            <button onclick="event.stopPropagation(); toggleVideoCameraFlip()" class="absolute top-2.5 left-2.5 bg-black/60 hover:bg-black/80 text-white p-1.5 rounded-xl border border-white/10 shadow z-10 transition active:scale-90" title="Turn Camera (Front / Rear)">
+              <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>
+            </button>
+
             <div id="meeting-local-avatar-fallback" class="hidden absolute inset-0 bg-slate-900 flex flex-col items-center justify-center">
               <img id="meeting-local-avatar" src="" class="w-20 h-20 rounded-full border-2 border-emerald-400 object-cover shadow-xl mb-2">
               <span class="text-xs text-slate-300 font-semibold">Camera Off</span>
@@ -1319,6 +1338,9 @@
         </button>
         <button id="btn-meeting-cam" onclick="toggleMeetingCam()" class="w-12 h-12 rounded-full bg-white/10 hover:bg-white/20 active:scale-95 text-white flex items-center justify-center transition border border-white/10 shadow-md" title="Toggle Camera">
           <i data-lucide="video" id="meeting-icon-cam" class="w-5 h-5"></i>
+        </button>
+        <button id="btn-meeting-cam-flip" onclick="toggleVideoCameraFlip()" class="w-12 h-12 rounded-full bg-white/10 hover:bg-white/20 active:scale-95 text-white flex items-center justify-center transition border border-white/10 shadow-md" title="Turn Camera (Front / Rear)">
+          <i data-lucide="refresh-cw" class="w-5 h-5"></i>
         </button>
         <button id="btn-meeting-screen" onclick="toggleMeetingScreenShare()" class="w-12 h-12 rounded-full bg-white/10 hover:bg-white/20 active:scale-95 text-white flex items-center justify-center transition border border-white/10 shadow-md" title="Share Screen / Land Deeds">
           <i data-lucide="monitor" class="w-5 h-5"></i>
