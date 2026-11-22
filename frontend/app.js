@@ -1,5 +1,9 @@
 // LandConnect Core Application Logic & WebRTC Real-Time Calling Engine
 
+if (window.location.hostname === '0.0.0.0') {
+  window.location.hostname = 'localhost';
+}
+
 const API_BASE = window.location.origin;
 let WS_URL = `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/ws`;
 

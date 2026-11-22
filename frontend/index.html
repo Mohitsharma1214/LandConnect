@@ -11,6 +11,12 @@
   <link rel="apple-touch-icon" href="/static/icons/icon-192.png">
   <link rel="manifest" href="/manifest.json">
   <title>LandConnect – WhatsApp Inspired Real Estate & Calling</title>
+  <script>
+    // Ensure Chrome Secure Context: 0.0.0.0 is treated as insecure by Chrome and disables GPS & WebRTC
+    if (window.location.hostname === '0.0.0.0') {
+      window.location.hostname = 'localhost';
+    }
+  </script>
   <!-- Tailwind CSS CDN -->
   <script src="https://cdn.tailwindcss.com"></script>
   <!-- Lucide Icons -->
