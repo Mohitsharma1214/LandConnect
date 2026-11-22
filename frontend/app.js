@@ -233,7 +233,8 @@ let savedListingIds = JSON.parse(localStorage.getItem('landconnect_saved') || '[
 let isFilteringSaved = false;
 
 function isFavorite(id) {
-  return savedListingIds.includes(id);
+  if (id === null || id === undefined) return false;
+  return savedListingIds.some(x => String(x) === String(id));
 }
 
 function updateSavedCounterUI() {
@@ -249,14 +250,32 @@ function updateSavedCounterUI() {
   }
 }
 
+function updateDetailFavUI(listingId) {
+  const btn = document.getElementById('btn-detail-fav');
+  if (!btn) return;
+  const isFav = isFavorite(listingId);
+  btn.innerHTML = `<i data-lucide="heart" id="icon-detail-fav" class="w-4 h-4 ${isFav ? 'fill-rose-500 text-rose-500' : 'text-white'}"></i>`;
+  btn.title = isFav ? 'Remove from Saved' : 'Save Plot';
+  if (window.lucide) lucide.createIcons();
+}
+
 function toggleFavoriteListing(id) {
-  if (savedListingIds.includes(id)) {
-    savedListingIds = savedListingIds.filter(x => x !== id);
+  if (id === null || id === undefined) return;
+  const strId = String(id);
+  const exists = savedListingIds.some(x => String(x) === strId);
+  if (exists) {
+    savedListingIds = savedListingIds.filter(x => String(x) !== strId);
+    showToast('Removed from Saved Plots', 'info');
   } else {
     savedListingIds.push(id);
+    showToast('❤️ Saved to Shortlisted Plots!', 'success');
   }
   localStorage.setItem('landconnect_saved', JSON.stringify(savedListingIds));
   updateSavedCounterUI();
+
+  if (activePropertyDetailListing && String(activePropertyDetailListing.id) === strId) {
+    updateDetailFavUI(activePropertyDetailListing.id);
+  }
 
   if (isFilteringSaved) {
     filterSavedListings();
@@ -268,12 +287,7 @@ function toggleFavoriteListing(id) {
 function toggleDetailPropertyFavorite() {
   if (activePropertyDetailListing) {
     toggleFavoriteListing(activePropertyDetailListing.id);
-    const favIcon = document.getElementById('icon-detail-fav');
-    if (favIcon) {
-      favIcon.className = isFavorite(activePropertyDetailListing.id)
-        ? 'w-4 h-4 fill-rose-500 text-rose-500'
-        : 'w-4 h-4 text-white';
-    }
+    updateDetailFavUI(activePropertyDetailListing.id);
   }
 }
 
@@ -1130,12 +1144,7 @@ function openPropertyDetails(listingId) {
     }
   }
 
-  const favIcon = document.getElementById('icon-detail-fav');
-  if (favIcon) {
-    favIcon.className = isFavorite(item.id)
-      ? 'w-4 h-4 fill-rose-500 text-rose-500'
-      : 'w-4 h-4 text-white';
-  }
+  updateDetailFavUI(item.id);
 
   if (modal) modal.classList.remove('hidden');
   if (window.lucide) lucide.createIcons();
@@ -6628,3 +6637,7 @@ window.chatListingOwnerFromMap = chatListingOwnerFromMap;
 window.startChatWithUser = startChatWithUser;
 window.sendPropertyInquiryForListing = sendPropertyInquiryForListing;
 window.attachListingInChat = attachListingInChat;
+window.toggleDetailPropertyFavorite = toggleDetailPropertyFavorite;
+window.toggleFavoriteListing = toggleFavoriteListing;
+window.updateDetailFavUI = updateDetailFavUI;
+window.isFavorite = isFavorite;

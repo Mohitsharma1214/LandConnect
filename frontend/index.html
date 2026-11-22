@@ -1698,10 +1698,10 @@
         <!-- Top Image Banner & Close Button -->
         <div class="relative h-52 w-full bg-slate-900 flex-shrink-0">
           <img id="detail-img" src="" onerror="this.onerror=null; this.src='https://images.unsplash.com/photo-1500382017468-9049fed747ef?w=800';" class="w-full h-full object-cover">
-          <button onclick="toggleDetailPropertyFavorite()" id="btn-detail-fav" class="absolute top-3 left-3 bg-black/60 hover:bg-black/80 text-white p-1.5 rounded-full backdrop-blur-md transition">
+          <button onclick="toggleDetailPropertyFavorite()" id="btn-detail-fav" class="absolute top-3 left-3 bg-black/60 hover:bg-black/80 text-white p-1.5 rounded-full backdrop-blur-md transition z-10 cursor-pointer" title="Save Plot">
             <i data-lucide="heart" id="icon-detail-fav" class="w-4 h-4"></i>
           </button>
-          <button onclick="closePropertyDetails()" class="absolute top-3 right-3 bg-black/60 hover:bg-black/80 text-white p-1.5 rounded-full backdrop-blur-md transition">
+          <button onclick="closePropertyDetails()" class="absolute top-3 right-3 bg-black/60 hover:bg-black/80 text-white p-1.5 rounded-full backdrop-blur-md transition z-10 cursor-pointer" title="Close Details">
             <i data-lucide="x" class="w-4 h-4"></i>
           </button>
           <div class="absolute bottom-3 left-3 bg-wa-tealDark/95 backdrop-blur-md text-white px-3 py-1 rounded-xl text-sm font-black shadow-lg">
