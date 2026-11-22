@@ -705,6 +705,9 @@ function switchTab(tabId) {
   if (tabId === 'map') {
     renderMapParcelsSelector();
     updateMapCard(selectedMapListing || allListings[0]);
+    setTimeout(() => {
+      initInteractiveLandMap();
+    }, 120);
   }
   if (tabId === 'profile') {
     applyUserRoleUI();
@@ -778,6 +781,9 @@ async function loadListings() {
     allListings = await res.json();
     renderListings(allListings);
     renderMapParcelsSelector();
+    if (activeTab === 'map') {
+      setTimeout(() => initInteractiveLandMap(), 100);
+    }
   } catch (err) {
     console.error('Error loading listings:', err);
   }
@@ -5581,9 +5587,172 @@ function initWebSocket() {
   };
 }
 
-// ================= MAP VIEW & GEOLOCATION =================
+// ================= MAP VIEW & GEOLOCATION (INTERACTIVE LEAFLET MAP) =================
 
 let selectedMapListing = null;
+let landMapInstance = null;
+let landMapMarkers = {}; // listingId -> L.marker
+
+function createLandMarkerIcon(listing, isSelected = false) {
+  const priceNum = Number(listing.price) || 0;
+  const priceFormatted = priceNum >= 10000000 
+    ? `₹${(priceNum / 10000000).toFixed(1)}Cr` 
+    : `₹${(priceNum / 100000).toFixed(1)}L`;
+
+  let colorClass = 'bg-emerald-600';
+  let ringClass = 'ring-emerald-400';
+  let iconChar = '🌱';
+
+  if (listing.property_type === 'Commercial') {
+    colorClass = 'bg-purple-600';
+    ringClass = 'ring-purple-400';
+    iconChar = '🏢';
+  } else if (listing.property_type === 'Industrial') {
+    colorClass = 'bg-amber-600';
+    ringClass = 'ring-amber-400';
+    iconChar = '🏭';
+  } else if (listing.property_type === 'Residential') {
+    colorClass = 'bg-blue-600';
+    ringClass = 'ring-blue-400';
+    iconChar = '🏡';
+  }
+
+  const scaleClass = isSelected 
+    ? 'scale-115 ring-4 ring-offset-2 ring-emerald-500 shadow-2xl z-50' 
+    : 'scale-100 ring-2 ring-offset-1 ring-white/90 shadow-md';
+
+  return L.divIcon({
+    className: 'land-custom-marker',
+    html: `
+      <div class="relative flex flex-col items-center cursor-pointer transition-all duration-200 transform hover:scale-110 select-none ${scaleClass}">
+        <div class="w-8 h-8 rounded-full ${colorClass} text-white flex items-center justify-center text-xs font-bold border-2 border-white shadow-lg">
+          <span>${iconChar}</span>
+        </div>
+        <div class="bg-slate-900/90 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-md shadow mt-0.5 whitespace-nowrap border border-white/30 backdrop-blur-xs">
+          ${priceFormatted}
+        </div>
+      </div>
+    `,
+    iconSize: [42, 48],
+    iconAnchor: [21, 24],
+    popupAnchor: [0, -26]
+  });
+}
+
+function initInteractiveLandMap() {
+  if (typeof L === 'undefined') {
+    console.warn('Leaflet library is still loading...');
+    return;
+  }
+  const container = document.getElementById('interactive-land-map');
+  if (!container) return;
+
+  if (!landMapInstance) {
+    landMapInstance = L.map('interactive-land-map', {
+      zoomControl: true,
+      attributionControl: false
+    }).setView([12.9716, 77.5946], 11);
+
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+      attribution: '© OpenStreetMap'
+    }).addTo(landMapInstance);
+  }
+
+  // Invalidate size to ensure clean tile rendering when switching tabs
+  landMapInstance.invalidateSize();
+
+  // Clear existing markers
+  Object.values(landMapMarkers).forEach(m => m.remove());
+  landMapMarkers = {};
+
+  const validListings = allListings.filter(l => l.latitude && l.longitude);
+  const counterEl = document.getElementById('map-counter');
+  if (counterEl) {
+    counterEl.textContent = `${validListings.length} Land Parcels`;
+  }
+
+  if (validListings.length === 0) return;
+
+  const latLngs = [];
+
+  validListings.forEach(item => {
+    const lat = parseFloat(item.latitude);
+    const lng = parseFloat(item.longitude);
+    if (isNaN(lat) || isNaN(lng)) return;
+
+    latLngs.push([lat, lng]);
+
+    const isSelected = selectedMapListing && String(selectedMapListing.id) === String(item.id);
+    const marker = L.marker([lat, lng], {
+      icon: createLandMarkerIcon(item, isSelected)
+    }).addTo(landMapInstance);
+
+    const firstImg = (item.images && item.images.length > 0) 
+      ? item.images[0] 
+      : 'https://images.unsplash.com/photo-1500382017468-9049fed747ef?w=300';
+
+    const formattedPrice = Number(item.price).toLocaleString('en-IN');
+    const areaSqft = Number(item.area_sqft) || 0;
+    const acres = (areaSqft / 43560).toFixed(2);
+    const areaText = acres > 0 ? `${acres} Acres (${areaSqft.toLocaleString('en-IN')} sq.ft)` : `${areaSqft} sq.ft`;
+
+    const popupHtml = `
+      <div class="p-1 min-w-[190px] text-slate-800 font-sans cursor-pointer" onclick="openPropertyDetails(${item.id})">
+        <img src="${firstImg}" class="w-full h-24 object-cover rounded-xl mb-1.5 shadow-xs border border-slate-100" 
+             onerror="this.src='https://images.unsplash.com/photo-1500382017468-9049fed747ef?w=300'">
+        <div class="flex items-center justify-between">
+          <span class="text-[9px] font-bold uppercase tracking-wider text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded">${escapeHTML(item.property_type || 'Land')}</span>
+          <span class="text-[9px] text-slate-500 font-medium">${areaText}</span>
+        </div>
+        <div class="font-bold text-xs text-slate-900 truncate mt-1">${escapeHTML(item.title)}</div>
+        <div class="text-xs font-extrabold text-emerald-600 mt-0.5">₹${formattedPrice}</div>
+        <button onclick="event.stopPropagation(); openPropertyDetails(${item.id})" class="mt-2 w-full bg-wa-teal hover:bg-wa-tealDark text-white text-[11px] font-bold py-1.5 px-2 rounded-xl text-center transition flex items-center justify-center gap-1 shadow-xs">
+          <span>View Land Details</span>
+          <span>👉</span>
+        </button>
+      </div>
+    `;
+
+    marker.bindPopup(popupHtml, { maxWidth: 220, closeButton: false, offset: [0, -10] });
+
+    marker.on('click', () => {
+      selectMapParcel(item.id, false);
+    });
+
+    landMapMarkers[item.id] = marker;
+  });
+
+  if (!selectedMapListing && validListings.length > 0) {
+    selectedMapListing = validListings[0];
+  }
+
+  if (selectedMapListing) {
+    updateMapCard(selectedMapListing);
+  }
+
+  // Auto-fit bounds so all parcel dots are visible
+  if (latLngs.length > 0) {
+    try {
+      const bounds = L.latLngBounds(latLngs);
+      landMapInstance.fitBounds(bounds, { padding: [45, 45], maxZoom: 13 });
+    } catch (e) {
+      console.warn('Map fitBounds notice:', e);
+    }
+  }
+}
+
+function recenterLandMap() {
+  if (!landMapInstance) {
+    initInteractiveLandMap();
+    return;
+  }
+  const validListings = allListings.filter(l => l.latitude && l.longitude);
+  if (validListings.length === 0) return;
+  const latLngs = validListings.map(l => [parseFloat(l.latitude), parseFloat(l.longitude)]);
+  const bounds = L.latLngBounds(latLngs);
+  landMapInstance.fitBounds(bounds, { padding: [45, 45], maxZoom: 13 });
+}
 
 function renderMapParcelsSelector() {
   const container = document.getElementById('map-parcels-selector');
@@ -5596,27 +5765,57 @@ function renderMapParcelsSelector() {
     return;
   }
 
-  container.innerHTML = allListings.map((item, idx) => {
-    const isSelected = selectedMapListing && selectedMapListing.id === item.id;
+  container.innerHTML = allListings.map(item => {
+    const isSelected = selectedMapListing && String(selectedMapListing.id) === String(item.id);
+    let icon = '🌱';
+    if (item.property_type === 'Commercial') icon = '🏢';
+    else if (item.property_type === 'Industrial') icon = '🏭';
+    else if (item.property_type === 'Residential') icon = '🏡';
+
+    const priceNum = Number(item.price) || 0;
+    const priceFormatted = priceNum >= 10000000 
+      ? `₹${(priceNum / 10000000).toFixed(1)}Cr` 
+      : `₹${(priceNum / 100000).toFixed(1)}L`;
+
     return `
-      <button onclick="selectMapParcel(${item.id})" 
-              class="px-2.5 py-1 rounded-full whitespace-nowrap text-[11px] font-semibold transition border ${
+      <button onclick="selectMapParcel(${item.id}, true)" 
+              class="px-2.5 py-1 rounded-full whitespace-nowrap text-[11px] font-semibold transition border flex items-center gap-1 shrink-0 ${
                 isSelected 
-                  ? 'bg-wa-teal text-white border-wa-teal shadow-sm' 
+                  ? 'bg-wa-teal text-white border-wa-teal shadow-xs' 
                   : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-200'
               }">
-        📍 ${item.title.split(' ')[0]} ${item.title.split(' ')[1] || ''} (₹${(item.price / 100000).toFixed(1)}L)
+        <span>${icon}</span>
+        <span>${escapeHTML(item.title.split(' ').slice(0, 2).join(' '))}</span>
+        <span class="opacity-80 font-normal">(${priceFormatted})</span>
       </button>
     `;
   }).join('');
 }
 
-function selectMapParcel(listingId) {
-  const item = allListings.find(l => l.id === listingId);
+function selectMapParcel(listingId, panTo = true) {
+  const item = allListings.find(l => String(l.id) === String(listingId));
   if (!item) return;
   selectedMapListing = item;
   updateMapCard(item);
   renderMapParcelsSelector();
+
+  // Refresh icons to show which one is actively selected
+  Object.keys(landMapMarkers).forEach(id => {
+    const isCur = String(id) === String(item.id);
+    const m = landMapMarkers[id];
+    const targetListing = allListings.find(l => String(l.id) === String(id));
+    if (m && targetListing) {
+      m.setIcon(createLandMarkerIcon(targetListing, isCur));
+    }
+  });
+
+  const marker = landMapMarkers[item.id];
+  if (marker && landMapInstance) {
+    if (panTo) {
+      landMapInstance.flyTo([item.latitude, item.longitude], 14, { duration: 0.6 });
+    }
+    marker.openPopup();
+  }
 }
 
 function updateMapCard(listing) {
@@ -5629,19 +5828,24 @@ function updateMapCard(listing) {
   const titleEl = document.getElementById('map-card-title');
   const priceEl = document.getElementById('map-card-price');
   const typeEl = document.getElementById('map-card-type');
-  const mapIframe = document.getElementById('map-iframe');
+  const areaEl = document.getElementById('map-card-area');
+  const imgEl = document.getElementById('map-card-img');
 
   if (titleEl) titleEl.textContent = listing.title;
   if (priceEl) priceEl.textContent = `₹${Number(listing.price).toLocaleString('en-IN')}`;
   if (typeEl) typeEl.textContent = listing.property_type;
-
-  // Center OpenStreetMap on listing coordinates
-  if (mapIframe && listing.latitude && listing.longitude) {
-    const lat = listing.latitude;
-    const lng = listing.longitude;
-    const delta = 0.05;
-    mapIframe.src = `https://www.openstreetmap.org/export/embed.html?bbox=${lng - delta},${lat - delta},${lng + delta},${lat + delta}&layer=mapnik&marker=${lat},${lng}`;
+  if (areaEl) {
+    const areaSqft = Number(listing.area_sqft) || 0;
+    const acres = (areaSqft / 43560).toFixed(2);
+    areaEl.textContent = acres > 0 ? `${acres} Acres (${areaSqft.toLocaleString('en-IN')} sq.ft)` : `${areaSqft} sq.ft`;
   }
+  if (imgEl) {
+    const firstImg = (listing.images && listing.images.length > 0) 
+      ? listing.images[0] 
+      : 'https://images.unsplash.com/photo-1500382017468-9049fed747ef?w=200';
+    imgEl.src = firstImg;
+  }
+  if (window.lucide) lucide.createIcons();
 }
 
 function openSelectedMapPlotDetails() {
@@ -6259,3 +6463,9 @@ window.closeLandCalculatorModal = closeLandCalculatorModal;
 window.closeCalculatorModal = closeLandCalculatorModal;
 window.openPropertyDetails = openPropertyDetails;
 window.closePropertyDetails = closePropertyDetails;
+window.recenterLandMap = recenterLandMap;
+window.selectMapParcel = selectMapParcel;
+window.initInteractiveLandMap = initInteractiveLandMap;
+window.openSelectedMapPlotDetails = openSelectedMapPlotDetails;
+window.callListingOwnerFromMap = callListingOwnerFromMap;
+window.chatListingOwnerFromMap = chatListingOwnerFromMap;
