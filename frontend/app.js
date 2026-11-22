@@ -21,13 +21,13 @@ function getInitialsAvatar(name = 'User', role = '') {
   } else if (parts.length === 1 && parts[0].length > 0) {
     initials = parts[0].slice(0, 2).toUpperCase();
   }
-  let bg = '075E54';
+  let bg = '#075E54';
   const roleLower = String(role || '').toLowerCase();
-  if (roleLower === 'buyer') bg = '1E3A8A';
-  else if (roleLower === 'seller') bg = '065F46';
-  else if (roleLower === 'broker') bg = '581C87';
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100" viewBox="0 0 100 100"><rect width="100" height="100" rx="50" fill="%23${bg}"/><text x="50%" y="54%" text-anchor="middle" dominant-baseline="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif" font-weight="700" font-size="38" fill="%23FFFFFF">${initials}</text></svg>`;
-  return `data:image/svg+xml;utf8,${svg}`;
+  if (roleLower === 'buyer') bg = '#1E3A8A';
+  else if (roleLower === 'seller') bg = '#065F46';
+  else if (roleLower === 'broker') bg = '#581C87';
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100" viewBox="0 0 100 100"><rect width="100" height="100" rx="50" fill="${bg}"/><text x="50%" y="54%" text-anchor="middle" dominant-baseline="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif" font-weight="700" font-size="38" fill="#FFFFFF">${initials}</text></svg>`;
+  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
 }
 
 function handleAvatarError(imgEl, name, role) {
@@ -1830,11 +1830,12 @@ async function startChatWithUser(userId, name, avatar, role) {
 
   if (peerName) peerName.textContent = displayName;
   if (peerAvatar) {
+    const fallbackSrc = getInitialsAvatar(displayName, role);
     peerAvatar.onerror = function() {
       this.onerror = null;
-      this.src = getInitialsAvatar(displayName, role);
+      this.src = fallbackSrc;
     };
-    peerAvatar.src = avatar || getInitialsAvatar(displayName, role);
+    peerAvatar.src = (avatar && String(avatar).trim() && String(avatar) !== 'null' && String(avatar) !== 'undefined') ? avatar : fallbackSrc;
   }
   if (peerRole) peerRole.textContent = role;
 
@@ -3873,13 +3874,6 @@ async function initiateDirectCall(targetUserId, targetName, targetAvatar, target
     applyVideoMirrorStyle(localVideo, isLocalVideoMirrored);
   }
 
-  // Self preview on remote-video while dialing so the big screen isn't a dead black box
-  const remoteVideo = document.getElementById('remote-video');
-  if (callType === 'video' && remoteVideo && localStream) {
-    remoteVideo.srcObject = localStream;
-    applyVideoMirrorStyle(remoteVideo, isLocalVideoMirrored);
-  }
-
   setupPeerConnection();
 
   if (ws && ws.readyState === WebSocket.OPEN) {
@@ -3914,9 +3908,11 @@ function setupPeerConnection() {
   peerConnection.ontrack = (event) => {
     const remoteVideo = document.getElementById('remote-video');
     const remoteAudio = document.getElementById('remote-audio');
+    const audioPlaceholder = document.getElementById('audio-call-placeholder');
     remoteStream = event.streams[0];
 
     if (activeCallType === 'video' && remoteVideo) {
+      if (audioPlaceholder) audioPlaceholder.classList.add('hidden');
       remoteVideo.srcObject = remoteStream;
       applyVideoMirrorStyle(remoteVideo, isRemoteVideoMirrored);
       remoteVideo.play().catch(() => {});
@@ -3986,7 +3982,10 @@ function showCallModal(peerName, peerAvatar, peerRole, callType) {
     if (audioPlaceholder) audioPlaceholder.classList.remove('hidden');
     if (localVideoBox) localVideoBox.classList.add('hidden');
   } else {
-    if (audioPlaceholder) audioPlaceholder.classList.add('hidden');
+    if (audioPlaceholder) {
+      audioPlaceholder.classList.remove('hidden');
+      if (audioPlaceholderStatus) audioPlaceholderStatus.textContent = 'Connecting Secure Video...';
+    }
     if (localVideoBox) localVideoBox.classList.remove('hidden');
   }
 
@@ -4048,8 +4047,10 @@ function cleanupCall() {
 
   const localVideo = document.getElementById('local-video');
   const remoteVideo = document.getElementById('remote-video');
+  const audioPlaceholder = document.getElementById('audio-call-placeholder');
   if (localVideo) localVideo.srcObject = null;
   if (remoteVideo) remoteVideo.srcObject = null;
+  if (audioPlaceholder) audioPlaceholder.classList.remove('hidden');
 
   const modal = document.getElementById('call-modal');
   if (modal) modal.classList.add('hidden');
@@ -4411,13 +4412,6 @@ async function acceptIncomingCall() {
   if (localVideo) {
     localVideo.srcObject = localStream;
     applyVideoMirrorStyle(localVideo, isLocalVideoMirrored);
-  }
-
-  // Self preview on remote-video while dialing so the big screen isn't a dead black box
-  const remoteVideo = document.getElementById('remote-video');
-  if (callType === 'video' && remoteVideo && localStream) {
-    remoteVideo.srcObject = localStream;
-    applyVideoMirrorStyle(remoteVideo, isLocalVideoMirrored);
   }
 
   setupPeerConnection();

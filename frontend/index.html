@@ -50,12 +50,13 @@
       } else if (parts.length === 1 && parts[0].length > 0) {
         initials = parts[0].slice(0, 2).toUpperCase();
       }
-      let bg = '075E54';
-      if (role === 'buyer') bg = '1E3A8A';
-      else if (role === 'seller') bg = '065F46';
-      else if (role === 'broker') bg = '581C87';
-      const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100" viewBox="0 0 100 100"><rect width="100" height="100" rx="50" fill="%23' + bg + '"/><text x="50%" y="54%" text-anchor="middle" dominant-baseline="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif" font-weight="700" font-size="38" fill="%23FFFFFF">' + initials + '</text></svg>';
-      return 'data:image/svg+xml;utf8,' + svg;
+      let bg = '#075E54';
+      const roleLower = String(role || '').toLowerCase();
+      if (roleLower === 'buyer') bg = '#1E3A8A';
+      else if (roleLower === 'seller') bg = '#065F46';
+      else if (roleLower === 'broker') bg = '#581C87';
+      const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100" viewBox="0 0 100 100"><rect width="100" height="100" rx="50" fill="' + bg + '"/><text x="50%" y="54%" text-anchor="middle" dominant-baseline="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif" font-weight="700" font-size="38" fill="#FFFFFF">' + initials + '</text></svg>';
+      return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
     }
     function handleAvatarError(imgEl, name, role) {
       if (!imgEl) return;
@@ -726,7 +727,7 @@
               <i data-lucide="arrow-left" class="w-5 h-5"></i>
             </button>
             <div onclick="openContactProfile(activeChatPeer ? activeChatPeer.id : null)" class="flex items-center gap-2 min-w-0 flex-1 cursor-pointer hover:opacity-90 active:opacity-75 transition group" title="View contact info & status">
-              <img id="chat-peer-avatar" src="" onerror="handleAvatarError(this, (window.activeChatPeer && activeChatPeer.name) || 'User', (window.activeChatPeer && activeChatPeer.role) || '')" class="w-9 h-9 rounded-full object-cover border border-white/20 shrink-0 group-hover:scale-105 transition-transform">
+              <img id="chat-peer-avatar" src="data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22100%22%20height%3D%22100%22%20viewBox%3D%220%200%20100%20100%22%3E%3Crect%20width%3D%22100%22%20height%3D%22100%22%20rx%3D%2250%22%20fill%3D%22%23075E54%22%2F%3E%3Ctext%20x%3D%2250%25%22%20y%3D%2254%25%22%20text-anchor%3D%22middle%22%20dominant-baseline%3D%22middle%22%20font-family%3D%22-apple-system%2CBlinkMacSystemFont%2CSegoe%20UI%2CRoboto%2Csans-serif%22%20font-weight%3D%22700%22%20font-size%3D%2238%22%20fill%3D%22%23FFFFFF%22%3ELC%3C%2Ftext%3E%3C%2Fsvg%3E" onerror="handleAvatarError(this, (window.activeChatPeer && activeChatPeer.name) || 'User', (window.activeChatPeer && activeChatPeer.role) || '')" class="w-9 h-9 rounded-full object-cover border border-white/20 shrink-0 group-hover:scale-105 transition-transform">
               <div class="min-w-0 flex-1">
                 <div class="flex items-center gap-1.5">
                   <h3 id="chat-peer-name" class="font-bold text-sm leading-tight truncate max-w-[130px]">Name</h3>
