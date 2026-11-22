@@ -3873,6 +3873,13 @@ async function initiateDirectCall(targetUserId, targetName, targetAvatar, target
     applyVideoMirrorStyle(localVideo, isLocalVideoMirrored);
   }
 
+  // Self preview on remote-video while dialing so the big screen isn't a dead black box
+  const remoteVideo = document.getElementById('remote-video');
+  if (callType === 'video' && remoteVideo && localStream) {
+    remoteVideo.srcObject = localStream;
+    applyVideoMirrorStyle(remoteVideo, isLocalVideoMirrored);
+  }
+
   setupPeerConnection();
 
   if (ws && ws.readyState === WebSocket.OPEN) {
@@ -3911,6 +3918,8 @@ function setupPeerConnection() {
 
     if (activeCallType === 'video' && remoteVideo) {
       remoteVideo.srcObject = remoteStream;
+      applyVideoMirrorStyle(remoteVideo, isRemoteVideoMirrored);
+      remoteVideo.play().catch(() => {});
     } else if (remoteAudio) {
       remoteAudio.srcObject = remoteStream;
     }
@@ -4031,7 +4040,16 @@ function cleanupCall() {
   isAudioMuted = false;
   isVideoMuted = false;
   isSpeakerMuted = false;
+  isSwappedToMain = false;
+  currentCameraFacingMode = 'user';
+  isLocalVideoMirrored = true;
+  isRemoteVideoMirrored = false;
   updateMuteButtonsUI();
+
+  const localVideo = document.getElementById('local-video');
+  const remoteVideo = document.getElementById('remote-video');
+  if (localVideo) localVideo.srcObject = null;
+  if (remoteVideo) remoteVideo.srcObject = null;
 
   const modal = document.getElementById('call-modal');
   if (modal) modal.classList.add('hidden');
@@ -4136,85 +4154,176 @@ function toggleVideoCamera() {
 
 let currentCameraFacingMode = 'user'; // 'user' (front) or 'environment' (back)
 let isLocalVideoMirrored = true;
+let isRemoteVideoMirrored = false;
+let isSwappedToMain = false;
+let availableVideoDevices = [];
+let activeVideoDeviceIndex = 0;
 
 function applyVideoMirrorStyle(videoEl, shouldMirror) {
   if (!videoEl) return;
   if (shouldMirror) {
-    videoEl.style.transform = 'scaleX(-1)';
-    videoEl.style.webkitTransform = 'scaleX(-1)';
+    videoEl.classList.remove('video-unmirrored');
+    videoEl.classList.add('video-mirrored');
+    videoEl.style.setProperty('transform', 'scaleX(-1) translateZ(0)', 'important');
+    videoEl.style.setProperty('-webkit-transform', 'scaleX(-1) translateZ(0)', 'important');
   } else {
-    videoEl.style.transform = 'scaleX(1)';
-    videoEl.style.webkitTransform = 'scaleX(1)';
+    videoEl.classList.remove('video-mirrored');
+    videoEl.classList.add('video-unmirrored');
+    videoEl.style.setProperty('transform', 'scaleX(1) translateZ(0)', 'important');
+    videoEl.style.setProperty('-webkit-transform', 'scaleX(1) translateZ(0)', 'important');
   }
 }
 
 function toggleVideoMirror() {
   isLocalVideoMirrored = !isLocalVideoMirrored;
+  isRemoteVideoMirrored = !isRemoteVideoMirrored;
+
   const localVideo = document.getElementById('local-video');
+  const remoteVideo = document.getElementById('remote-video');
   const meetingLocalVideo = document.getElementById('meeting-local-video');
+
   if (localVideo) applyVideoMirrorStyle(localVideo, isLocalVideoMirrored);
   if (meetingLocalVideo) applyVideoMirrorStyle(meetingLocalVideo, isLocalVideoMirrored);
-  showToast(isLocalVideoMirrored ? 'Video preview mirrored (Selfie mode)' : 'Video preview unmirrored (Normal mode)', 'info');
+  if (remoteVideo) applyVideoMirrorStyle(remoteVideo, isRemoteVideoMirrored);
+
+  showToast(isLocalVideoMirrored ? 'Video Mirror ON' : 'Video Mirror OFF', 'info');
 }
 
+function swapVideoFeeds() {
+  const localVideo = document.getElementById('local-video');
+  const remoteVideo = document.getElementById('remote-video');
+  if (!localVideo || !remoteVideo) return;
+
+  isSwappedToMain = !isSwappedToMain;
+
+  const currentLocal = localVideo.srcObject;
+  const currentRemote = remoteVideo.srcObject;
+
+  localVideo.srcObject = currentRemote;
+  remoteVideo.srcObject = currentLocal;
+
+  applyVideoMirrorStyle(remoteVideo, isSwappedToMain ? isLocalVideoMirrored : isRemoteVideoMirrored);
+  applyVideoMirrorStyle(localVideo, isSwappedToMain ? isRemoteVideoMirrored : isLocalVideoMirrored);
+
+  localVideo.play().catch(() => {});
+  remoteVideo.play().catch(() => {});
+
+  showToast(isSwappedToMain ? 'Swapped: Your camera is fullscreen' : 'Swapped: Remote camera is fullscreen', 'info');
+}
+
+window.swapVideoFeeds = swapVideoFeeds;
+window.toggleVideoMirror = toggleVideoMirror;
+
 async function toggleVideoCameraFlip() {
-  const activeStream = (typeof localStream !== 'undefined' && localStream) ? localStream : ((typeof meetingLocalStream !== 'undefined' && meetingLocalStream) ? meetingLocalStream : null);
-  if (!activeStream) {
-    showToast('No active camera stream to flip', 'warning');
-    return;
-  }
+  const activeStream = (typeof localStream !== 'undefined' && localStream) 
+    ? localStream 
+    : ((typeof meetingLocalStream !== 'undefined' && meetingLocalStream) ? meetingLocalStream : null);
 
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-    showToast('Camera switching is not supported by this browser', 'warning');
+    showToast('Camera switching is not supported on this device/browser', 'warning');
     return;
   }
 
-  const newFacing = (currentCameraFacingMode === 'user') ? 'environment' : 'user';
-
   try {
-    // 1. Get new video stream from the requested camera facing mode
+    // 1. Refresh device list
+    let devices = [];
+    try {
+      devices = await navigator.mediaDevices.enumerateDevices();
+    } catch (e) {
+      devices = [];
+    }
+    availableVideoDevices = devices.filter(d => d.kind === 'videoinput');
+
+    const nextFacing = (currentCameraFacingMode === 'user') ? 'environment' : 'user';
+
+    // 2. Select camera constraint
+    let videoConstraint = { facingMode: nextFacing };
+    if (availableVideoDevices.length > 1) {
+      let targetDev = null;
+      if (nextFacing === 'environment') {
+        targetDev = availableVideoDevices.find(d => /back|rear|environment|main/i.test(d.label));
+      } else {
+        targetDev = availableVideoDevices.find(d => /front|user|selfie/i.test(d.label));
+      }
+      if (!targetDev) {
+        activeVideoDeviceIndex = (activeVideoDeviceIndex + 1) % availableVideoDevices.length;
+        targetDev = availableVideoDevices[activeVideoDeviceIndex];
+      }
+      if (targetDev && targetDev.deviceId) {
+        videoConstraint = { deviceId: { exact: targetDev.deviceId } };
+      }
+    }
+
+    // 3. Stop old video track(s) first to release mobile hardware camera lock
+    if (activeStream) {
+      const oldTracks = activeStream.getVideoTracks();
+      oldTracks.forEach(t => {
+        try { activeStream.removeTrack(t); } catch (e) {}
+        try { t.stop(); } catch (e) {}
+      });
+    }
+
+    // 4. Acquire new camera stream
     let newStream;
     try {
       newStream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: { exact: newFacing }, width: { ideal: 640 }, height: { ideal: 480 } }
+        video: videoConstraint,
+        audio: false
       });
-    } catch (e) {
-      newStream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: newFacing, width: { ideal: 640 }, height: { ideal: 480 } }
-      });
+    } catch (e1) {
+      try {
+        newStream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: nextFacing },
+          audio: false
+        });
+      } catch (e2) {
+        newStream = await navigator.mediaDevices.getUserMedia({
+          video: true,
+          audio: false
+        });
+      }
     }
 
     const newVideoTrack = newStream.getVideoTracks()[0];
     if (!newVideoTrack) {
-      showToast('Could not find requested camera', 'warning');
+      showToast('Could not acquire new camera feed', 'warning');
       return;
     }
 
-    // 2. Stop old video track(s)
-    const oldTracks = activeStream.getVideoTracks();
-    oldTracks.forEach(t => {
-      activeStream.removeTrack(t);
-      t.stop();
-    });
+    // 5. Add to active stream
+    if (activeStream) {
+      activeStream.addTrack(newVideoTrack);
+    }
 
-    // 3. Add new track to activeStream
-    activeStream.addTrack(newVideoTrack);
-    currentCameraFacingMode = newFacing;
-    isLocalVideoMirrored = (newFacing === 'user');
+    currentCameraFacingMode = nextFacing;
+    isLocalVideoMirrored = (nextFacing === 'user');
 
-    // 4. Update local preview elements & mirroring
+    // 6. Force reload video elements with fresh MediaStream
     const localVideo = document.getElementById('local-video');
     if (localVideo) {
-      localVideo.srcObject = activeStream;
+      localVideo.srcObject = null;
+      localVideo.srcObject = new MediaStream([newVideoTrack]);
       applyVideoMirrorStyle(localVideo, isLocalVideoMirrored);
-    }
-    const meetingLocalVideo = document.getElementById('meeting-local-video');
-    if (meetingLocalVideo) {
-      meetingLocalVideo.srcObject = activeStream;
-      applyVideoMirrorStyle(meetingLocalVideo, isLocalVideoMirrored);
+      localVideo.play().catch(() => {});
     }
 
-    // 5. Replace WebRTC track for 1-on-1 call
+    const meetingLocalVideo = document.getElementById('meeting-local-video');
+    if (meetingLocalVideo) {
+      meetingLocalVideo.srcObject = null;
+      meetingLocalVideo.srcObject = new MediaStream([newVideoTrack]);
+      applyVideoMirrorStyle(meetingLocalVideo, isLocalVideoMirrored);
+      meetingLocalVideo.play().catch(() => {});
+    }
+
+    const remoteVideo = document.getElementById('remote-video');
+    if (isSwappedToMain && remoteVideo) {
+      remoteVideo.srcObject = null;
+      remoteVideo.srcObject = new MediaStream([newVideoTrack]);
+      applyVideoMirrorStyle(remoteVideo, isLocalVideoMirrored);
+      remoteVideo.play().catch(() => {});
+    }
+
+    // 7. Replace track on WebRTC peer connection
     if (typeof peerConnection !== 'undefined' && peerConnection) {
       const senders = peerConnection.getSenders();
       const videoSender = senders.find(s => s.track && s.track.kind === 'video') || senders.find(s => !s.track);
@@ -4223,7 +4332,6 @@ async function toggleVideoCameraFlip() {
       }
     }
 
-    // 6. Replace WebRTC track for Meeting Room mesh connections
     if (typeof meetingPeerConnections !== 'undefined' && meetingPeerConnections.size > 0) {
       for (const [peerId, pc] of meetingPeerConnections.entries()) {
         const senders = pc.getSenders();
@@ -4234,11 +4342,11 @@ async function toggleVideoCameraFlip() {
       }
     }
 
-    const label = newFacing === 'environment' ? 'Back / Rear Camera' : 'Front / Selfie Camera';
-    showToast(`Turned camera to ${label}`, 'info');
+    const label = (nextFacing === 'environment') ? 'Rear / Back Camera' : 'Front / Selfie Camera';
+    showToast(`Turned to ${label}`, 'success');
   } catch (err) {
-    console.warn('Camera flip error:', err);
-    showToast('Could not turn camera: ' + (err.message || 'Permission or hardware restriction'), 'warning');
+    console.error('Camera flip error:', err);
+    showToast('Failed to switch camera: ' + (err.message || 'Hardware restricted'), 'error');
   }
 }
 
@@ -4303,6 +4411,13 @@ async function acceptIncomingCall() {
   if (localVideo) {
     localVideo.srcObject = localStream;
     applyVideoMirrorStyle(localVideo, isLocalVideoMirrored);
+  }
+
+  // Self preview on remote-video while dialing so the big screen isn't a dead black box
+  const remoteVideo = document.getElementById('remote-video');
+  if (callType === 'video' && remoteVideo && localStream) {
+    remoteVideo.srcObject = localStream;
+    applyVideoMirrorStyle(remoteVideo, isLocalVideoMirrored);
   }
 
   setupPeerConnection();
@@ -4677,6 +4792,10 @@ function leaveMeetingRoom() {
     meetingLocalStream = null;
   }
   stopMeetingScreenShare();
+  currentCameraFacingMode = 'user';
+  isLocalVideoMirrored = true;
+  const localVideo = document.getElementById('meeting-local-video');
+  if (localVideo) localVideo.srcObject = null;
 
   // Close all peer connections
   meetingPeerConnections.forEach((pc) => {
