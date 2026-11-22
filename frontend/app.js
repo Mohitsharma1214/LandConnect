@@ -558,7 +558,10 @@ async function submitRegister(e) {
 
 function openLogoutConfirmModal() {
   const modal = document.getElementById('logout-confirm-modal');
-  if (modal) modal.classList.remove('hidden');
+  if (modal) {
+    modal.classList.remove('hidden');
+    modal.style.zIndex = '2000';
+  }
   if (window.lucide) lucide.createIcons();
 }
 
@@ -937,7 +940,10 @@ function openNewListingModal() {
   const fileInput = document.getElementById('new-listing-file-input');
   if (previewBox) previewBox.classList.add('hidden');
   if (fileInput) fileInput.value = '';
-  if (modal) modal.classList.remove('hidden');
+  if (modal) {
+    modal.classList.remove('hidden');
+    modal.style.zIndex = '2000';
+  }
   if (window.lucide) lucide.createIcons();
 }
 
@@ -1146,7 +1152,10 @@ function openPropertyDetails(listingId) {
 
   updateDetailFavUI(item.id);
 
-  if (modal) modal.classList.remove('hidden');
+  if (modal) {
+    modal.classList.remove('hidden');
+    modal.style.zIndex = '2000';
+  }
   if (window.lucide) lucide.createIcons();
 }
 
@@ -1177,7 +1186,10 @@ function openEditListing(listingId) {
   document.getElementById('edit-listing-desc').value = item.description;
 
   const modal = document.getElementById('edit-listing-modal');
-  if (modal) modal.classList.remove('hidden');
+  if (modal) {
+    modal.classList.remove('hidden');
+    modal.style.zIndex = '2000';
+  }
 }
 
 function closeEditListingModal() {
@@ -1230,7 +1242,10 @@ let pendingDeleteListingId = null;
 function promptDeleteListing(listingId) {
   pendingDeleteListingId = listingId;
   const modal = document.getElementById('delete-confirm-modal');
-  if (modal) modal.classList.remove('hidden');
+  if (modal) {
+    modal.classList.remove('hidden');
+    modal.style.zIndex = '2000';
+  }
   if (window.lucide) lucide.createIcons();
 }
 
@@ -1796,7 +1811,10 @@ function updateHeaderPinArchiveButtons() {
 function openArchivedChatsModal() {
   renderArchivedContactsList();
   const modal = document.getElementById('archived-chats-modal');
-  if (modal) modal.classList.remove('hidden');
+  if (modal) {
+    modal.classList.remove('hidden');
+    modal.style.zIndex = '2000';
+  }
   if (window.lucide) lucide.createIcons();
 }
 
@@ -4104,7 +4122,10 @@ function showCallModal(peerName, peerAvatar, peerRole, callType) {
   const audioPlaceholderStatus = document.getElementById('audio-placeholder-status');
   const localVideoBox = document.getElementById('local-video-container');
 
-  if (modal) modal.classList.remove('hidden');
+  if (modal) {
+    modal.classList.remove('hidden');
+    modal.style.zIndex = '2000';
+  }
   if (nameEl) nameEl.textContent = peerName;
   if (roleEl) roleEl.textContent = `${peerRole} • Protected Contact`;
   if (avatarEl) {
@@ -4516,7 +4537,10 @@ function handleIncomingCall(data) {
     typeIcon.setAttribute('data-lucide', data.callType === 'video' ? 'video' : 'phone');
   }
 
-  if (modal) modal.classList.remove('hidden');
+  if (modal) {
+    modal.classList.remove('hidden');
+    modal.style.zIndex = '2000';
+  }
   if (window.lucide) lucide.createIcons();
 }
 
@@ -4604,7 +4628,10 @@ function openCreateMeetingRoomModal() {
   }
 
   renderMeetingInviteContacts();
-  if (modal) modal.classList.remove('hidden');
+  if (modal) {
+    modal.classList.remove('hidden');
+    modal.style.zIndex = '2000';
+  }
   if (window.lucide) lucide.createIcons();
 }
 
@@ -4774,7 +4801,10 @@ function openJoinMeetingModal() {
   const modal = document.getElementById('modal-join-meeting-room');
   const input = document.getElementById('input-join-meeting-code');
   if (input) input.value = '';
-  if (modal) modal.classList.remove('hidden');
+  if (modal) {
+    modal.classList.remove('hidden');
+    modal.style.zIndex = '2000';
+  }
 }
 
 function closeJoinMeetingModal() {
@@ -4811,7 +4841,10 @@ function openMeetingInviteDrawer() {
     inputLink.value = `${window.location.origin}/?room=${encodeURIComponent(currentMeetingRoomId)}`;
   }
   renderMeetingInviteContacts();
-  if (modal) modal.classList.remove('hidden');
+  if (modal) {
+    modal.classList.remove('hidden');
+    modal.style.zIndex = '2000';
+  }
   if (window.lucide) lucide.createIcons();
 }
 
@@ -4849,7 +4882,10 @@ async function joinMultiPartyMeetingRoom(roomId) {
     window.history.replaceState({ roomId: roomId }, '', newUrl);
   } catch(e) {}
 
-  if (modal) modal.classList.remove('hidden');
+  if (modal) {
+    modal.classList.remove('hidden');
+    modal.style.zIndex = '2000';
+  }
 
   // Request Camera & Microphone
   try {
@@ -5958,7 +5994,10 @@ let currentCalcTab = 'area';
 
 function openLandCalculatorModal() {
   const modal = document.getElementById('calculator-modal');
-  if (modal) modal.classList.remove('hidden');
+  if (modal) {
+    modal.classList.remove('hidden');
+    modal.style.zIndex = '3000';
+  }
   recalculateAreaUnits();
   recalculateStampDuty();
   recalculateEMI();
@@ -5996,7 +6035,7 @@ function openLandCalculatorForActiveProperty() {
   const modal = document.getElementById('calculator-modal');
   if (modal) {
     modal.classList.remove('hidden');
-    modal.style.zIndex = '70';
+    modal.style.zIndex = '3000';
   }
 
   if (listing) {
@@ -6241,7 +6280,10 @@ function openMapPinPicker(latId, lngId, addrId) {
   }
 
   const modal = document.getElementById('map-picker-modal');
-  if (modal) modal.classList.remove('hidden');
+  if (modal) {
+    modal.classList.remove('hidden');
+    modal.style.zIndex = '3000';
+  }
 
   updatePickerDisplay(currentPickerLat, currentPickerLng);
 
@@ -6482,7 +6524,10 @@ function openEditProfileModal() {
   }
 
   const modal = document.getElementById('edit-profile-modal');
-  if (modal) modal.classList.remove('hidden');
+  if (modal) {
+    modal.classList.remove('hidden');
+    modal.style.zIndex = '2000';
+  }
   if (window.lucide) lucide.createIcons();
 }
 
