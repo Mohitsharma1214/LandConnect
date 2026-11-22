@@ -17,7 +17,7 @@
 | **Backend REST & WS** | Python 3, Starlette, Uvicorn (ASGI) | High-concurrency asynchronous API server handling auth, listings CRUD, messaging, call signaling, and static file serving. |
 | **Database Persistence** | Neon Serverless PostgreSQL (`psycopg2` / SSL) | Cloud PostgreSQL with pooled connection management, relational schemas (`users`, `listings`, `messages`, `call_logs`), and indexed queries. |
 | **Cloud Object Storage**| Neon Object Storage (`uploads` bucket), AWS S3 SDK (`boto3`) | Multi-tenant cloud bucket storage for high-resolution land photographs, automatic URL generation, and fallback local bucket storage. |
-| **Authentication & RBAC**| JSON Web Tokens (JWT `HS256`), Salted SHA-256 | Stateless bearer token authentication, phone number privacy masking (`+91 98*** **321`), role-based endpoint authorization. |
+| **Authentication & RBAC**| JSON Web Tokens (JWT `HS256`), PBKDF2-HMAC-SHA256 (100k rounds) | Stateless bearer token authentication, phone number privacy masking (`+91 98*** **321`), role-based endpoint authorization, XSS & path traversal hardening. |
 
 ---
 
