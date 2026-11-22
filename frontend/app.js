@@ -101,6 +101,7 @@ let selectedRoleForReg = 'buyer';
 let ws = null;
 let activeTab = 'feed';
 let allListings = [];
+let activePropertyDetailListing = null;
 let allUsers = [];
 let activeChatPeer = null;
 let onlineUserIds = new Set();
@@ -1030,8 +1031,9 @@ async function handleCreateListing(e) {
 // ================= PROPERTY DETAILS & LISTING MANAGEMENT =================
 
 function openPropertyDetails(listingId) {
-  const item = allListings.find(l => l.id === listingId);
+  const item = allListings.find(l => String(l.id) === String(listingId));
   if (!item) return;
+  activePropertyDetailListing = item;
 
   const modal = document.getElementById('property-detail-modal');
   const imgEl = document.getElementById('detail-img');
@@ -1132,6 +1134,7 @@ function openPropertyDetails(listingId) {
 function closePropertyDetails() {
   const modal = document.getElementById('property-detail-modal');
   if (modal) modal.classList.add('hidden');
+  activePropertyDetailListing = null;
 }
 
 function openEditListing(listingId) {
@@ -5701,21 +5704,25 @@ function switchCalcTab(tab) {
 }
 
 function openLandCalculatorForActiveProperty() {
-  if (activePropertyDetailListing) {
-    const modal = document.getElementById('calculator-modal');
-    if (modal) modal.classList.remove('hidden');
+  const listing = activePropertyDetailListing || (allListings && allListings.length > 0 ? allListings[0] : null);
+  const modal = document.getElementById('calculator-modal');
+  if (modal) {
+    modal.classList.remove('hidden');
+    modal.style.zIndex = '70';
+  }
 
+  if (listing) {
     const priceInput = document.getElementById('calc-stamp-price');
     const loanAmountInput = document.getElementById('calc-loan-amount');
     const areaInput = document.getElementById('calc-area-input');
     const areaUnit = document.getElementById('calc-area-unit');
 
-    const price = activePropertyDetailListing.price || 5000000;
+    const price = listing.price || 5000000;
     if (priceInput) priceInput.value = price;
     if (loanAmountInput) loanAmountInput.value = Math.round(price * 0.75); // 75% LTV standard
 
-    if (areaInput && activePropertyDetailListing.area_sqft) {
-      areaInput.value = activePropertyDetailListing.area_sqft;
+    if (areaInput && listing.area_sqft) {
+      areaInput.value = listing.area_sqft;
       if (areaUnit) areaUnit.value = 'sqft';
     }
 
@@ -6244,3 +6251,11 @@ async function handleSaveProfile(e) {
     }
   }
 }
+
+// Global window bindings for calculator & modal triggers
+window.openLandCalculatorForActiveProperty = openLandCalculatorForActiveProperty;
+window.openLandCalculatorModal = openLandCalculatorModal;
+window.closeLandCalculatorModal = closeLandCalculatorModal;
+window.closeCalculatorModal = closeLandCalculatorModal;
+window.openPropertyDetails = openPropertyDetails;
+window.closePropertyDetails = closePropertyDetails;
