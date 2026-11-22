@@ -921,6 +921,9 @@ async def api_meeting_room_history(request):
 # room_id -> { "id": str, "created_by": int, "participants": { user_id: { "id": int, "name": str, "avatar": str, "role": str } } }
 active_meeting_rooms: Dict[str, Dict[str, Any]] = {}
 
+# Active 1-to-1 direct calls tracking: user_id -> peer_user_id
+active_direct_calls: Dict[int, int] = {}
+
 async def websocket_signaling(websocket: WebSocket):
     await websocket.accept()
     authenticated_user_id = None
@@ -1042,6 +1045,14 @@ async def websocket_signaling(websocket: WebSocket):
                 listing_id = data.get("listingId")
                 caller_info = data.get("callerInfo", {})
                 
+                try:
+                    u_int = int(authenticated_user_id)
+                    r_int = int(receiver_id)
+                    active_direct_calls[u_int] = r_int
+                    active_direct_calls[r_int] = u_int
+                except Exception:
+                    pass
+
                 await send_to_user(receiver_id, {
                     "type": "incoming_call",
                     "callerId": authenticated_user_id,
@@ -1064,6 +1075,13 @@ async def websocket_signaling(websocket: WebSocket):
                     continue
                 caller_id = data.get("callerId")
                 reason = data.get("reason", "Call declined")
+                try:
+                    u_int = int(authenticated_user_id)
+                    c_int = int(caller_id)
+                    active_direct_calls.pop(u_int, None)
+                    active_direct_calls.pop(c_int, None)
+                except Exception:
+                    pass
                 await send_to_user(caller_id, {
                     "type": "call_rejected",
                     "reason": reason
@@ -1075,6 +1093,14 @@ async def websocket_signaling(websocket: WebSocket):
                 target_user_id = data.get("targetUserId")
                 duration = data.get("duration", 0)
                 call_type = data.get("callType", "video")
+                try:
+                    u_int = int(authenticated_user_id)
+                    t_int = int(target_user_id) if target_user_id else None
+                    active_direct_calls.pop(u_int, None)
+                    if t_int:
+                        active_direct_calls.pop(t_int, None)
+                except Exception:
+                    pass
                 if target_user_id:
                     await send_to_user(target_user_id, {
                         "type": "call_ended",
@@ -1230,6 +1256,16 @@ async def websocket_signaling(websocket: WebSocket):
             u_id = int(authenticated_user_id)
             if u_id not in active_connections or not active_connections[u_id]:
                 await broadcast_user_status(u_id, "offline")
+
+            # Clean up active 1-to-1 direct call if caller or receiver disconnects
+            peer_id = active_direct_calls.pop(u_id, None)
+            if peer_id:
+                active_direct_calls.pop(peer_id, None)
+                await send_to_user(peer_id, {
+                    "type": "call_ended",
+                    "by": u_id,
+                    "reason": "Peer disconnected"
+                })
 
             # Clean up user from active meeting rooms
             for r_id, r_info in list(active_meeting_rooms.items()):

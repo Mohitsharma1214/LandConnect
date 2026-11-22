@@ -121,6 +121,8 @@ let remoteStream = null;
 let activeCallType = 'video';
 let activeCallTargetId = null;
 let incomingCallData = null;
+let incomingCallTimeoutTimer = null;
+let outgoingCallTimeoutTimer = null;
 let callTimerInterval = null;
 let callSeconds = 0;
 let isAudioMuted = false;
@@ -4044,6 +4046,18 @@ async function initiateDirectCall(targetUserId, targetName, targetAvatar, target
       }
     }));
     playOutgoingRing();
+
+    // Auto-timeout after 35 seconds if peer does not answer
+    if (outgoingCallTimeoutTimer) {
+      clearTimeout(outgoingCallTimeoutTimer);
+      outgoingCallTimeoutTimer = null;
+    }
+    outgoingCallTimeoutTimer = setTimeout(() => {
+      if (activeCallTargetId && (!peerConnection || peerConnection.connectionState !== 'connected')) {
+        showToast(`No answer from ${targetName}`, 'warning');
+        endCurrentCall();
+      }
+    }, 35000);
   }
 }
 
@@ -4181,6 +4195,14 @@ function endCurrentCall() {
 
 function cleanupCall() {
   stopRingtone();
+  if (incomingCallTimeoutTimer) {
+    clearTimeout(incomingCallTimeoutTimer);
+    incomingCallTimeoutTimer = null;
+  }
+  if (outgoingCallTimeoutTimer) {
+    clearTimeout(outgoingCallTimeoutTimer);
+    outgoingCallTimeoutTimer = null;
+  }
   clearInterval(callTimerInterval);
   callSeconds = 0;
 
@@ -4212,6 +4234,10 @@ function cleanupCall() {
   const modal = document.getElementById('call-modal');
   if (modal) modal.classList.add('hidden');
 
+  const incomingModal = document.getElementById('incoming-call-modal');
+  if (incomingModal) incomingModal.classList.add('hidden');
+
+  incomingCallData = null;
   activeCallTargetId = null;
   fetchCallLogs();
 }
@@ -4521,6 +4547,10 @@ function toggleSpeaker() {
 
 function handleIncomingCall(data) {
   stopRingtone();
+  if (incomingCallTimeoutTimer) {
+    clearTimeout(incomingCallTimeoutTimer);
+    incomingCallTimeoutTimer = null;
+  }
   playIncomingRing();
   incomingCallData = data;
   const modal = document.getElementById('incoming-call-modal');
@@ -4529,9 +4559,9 @@ function handleIncomingCall(data) {
   const avatarEl = document.getElementById('incoming-avatar');
   const typeIcon = document.getElementById('incoming-call-type-icon');
 
-  if (nameEl) nameEl.textContent = data.callerInfo.name;
-  if (roleEl) roleEl.textContent = `${data.callerInfo.role} • LandConnect Secured Call`;
-  if (avatarEl) avatarEl.src = data.callerInfo.avatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100';
+  if (nameEl) nameEl.textContent = data.callerInfo ? data.callerInfo.name : 'Incoming Caller';
+  if (roleEl) roleEl.textContent = `${data.callerInfo ? data.callerInfo.role : 'LandConnect'} • LandConnect Secured Call`;
+  if (avatarEl) avatarEl.src = (data.callerInfo && data.callerInfo.avatar) || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100';
 
   if (typeIcon) {
     typeIcon.setAttribute('data-lucide', data.callType === 'video' ? 'video' : 'phone');
@@ -4539,13 +4569,27 @@ function handleIncomingCall(data) {
 
   if (modal) {
     modal.classList.remove('hidden');
-    modal.style.zIndex = '2000';
+    modal.style.zIndex = '3000';
   }
   if (window.lucide) lucide.createIcons();
+
+  // Auto-dismiss after 35 seconds of ringing if no response
+  incomingCallTimeoutTimer = setTimeout(() => {
+    if (incomingCallData) {
+      stopRingtone();
+      if (modal) modal.classList.add('hidden');
+      showToast(`Missed call from ${data.callerInfo ? data.callerInfo.name : 'Caller'}`, 'info');
+      incomingCallData = null;
+    }
+  }, 35000);
 }
 
 async function acceptIncomingCall() {
   stopRingtone();
+  if (incomingCallTimeoutTimer) {
+    clearTimeout(incomingCallTimeoutTimer);
+    incomingCallTimeoutTimer = null;
+  }
   const modal = document.getElementById('incoming-call-modal');
   if (modal) modal.classList.add('hidden');
 
@@ -4595,6 +4639,10 @@ async function acceptIncomingCall() {
 
 function rejectIncomingCall() {
   stopRingtone();
+  if (incomingCallTimeoutTimer) {
+    clearTimeout(incomingCallTimeoutTimer);
+    incomingCallTimeoutTimer = null;
+  }
   const modal = document.getElementById('incoming-call-modal');
   if (modal) modal.classList.add('hidden');
 
@@ -5533,18 +5581,38 @@ function initWebSocket() {
 
         case 'call_accepted':
           console.log('Call was accepted by peer.');
+          if (outgoingCallTimeoutTimer) {
+            clearTimeout(outgoingCallTimeoutTimer);
+            outgoingCallTimeoutTimer = null;
+          }
           stopRingtone();
           break;
 
         case 'call_rejected':
           stopRingtone();
+          if (outgoingCallTimeoutTimer) {
+            clearTimeout(outgoingCallTimeoutTimer);
+            outgoingCallTimeoutTimer = null;
+          }
           showToast('Call was rejected: ' + (data.reason || 'Declined'), 'error');
           cleanupCall();
           break;
 
         case 'call_ended':
           stopRingtone();
-          showToast('Call ended by other party.', 'info');
+          if (incomingCallTimeoutTimer) {
+            clearTimeout(incomingCallTimeoutTimer);
+            incomingCallTimeoutTimer = null;
+          }
+          if (outgoingCallTimeoutTimer) {
+            clearTimeout(outgoingCallTimeoutTimer);
+            outgoingCallTimeoutTimer = null;
+          }
+          if (incomingCallData) {
+            showToast('Call was cancelled by the caller.', 'info');
+          } else {
+            showToast('Call ended by other party.', 'info');
+          }
           cleanupCall();
           break;
 
