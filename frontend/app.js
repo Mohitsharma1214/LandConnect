@@ -6149,6 +6149,7 @@ function detectGPSLocation(latId, lngId, statusId) {
 
   if (!navigator.geolocation) {
     if (statusEl) statusEl.innerHTML = '<span class="text-amber-600">⚠️ Geolocation not supported by browser.</span>';
+    fallbackFormNetworkLocation(latInput, lngInput, statusEl);
     return;
   }
 
@@ -6166,16 +6167,39 @@ function detectGPSLocation(latId, lngId, statusId) {
       if (statusEl) {
         statusEl.innerHTML = `<span class="text-emerald-700 font-bold">✓ GPS Fixed: ${lat}, ${lng} (±${acc}m)</span>`;
       }
-      showToast(`📍 GPS coordinates detected (±${acc}m accuracy)`);
+      showToast(`📍 GPS coordinates detected (±${acc}m accuracy)`, 'success');
     },
-    (err) => {
-      console.warn('GPS detection warning:', err);
-      if (statusEl) {
-        statusEl.innerHTML = `<span class="text-slate-500">GPS unavailable (${err.message}). Tap "Pick on Map".</span>`;
-      }
+    async (err) => {
+      console.warn('GPS detection notice:', err);
+      fallbackFormNetworkLocation(latInput, lngInput, statusEl);
     },
-    { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+    { enableHighAccuracy: true, timeout: 6000, maximumAge: 60000 }
   );
+}
+
+async function fallbackFormNetworkLocation(latInput, lngInput, statusEl) {
+  try {
+    const res = await fetch('https://get.geojs.io/v1/ip/geo.json');
+    if (res.ok) {
+      const data = await res.json();
+      if (data && data.latitude && data.longitude) {
+        const lat = parseFloat(data.latitude).toFixed(5);
+        const lng = parseFloat(data.longitude).toFixed(5);
+        const city = data.city || data.region || 'Local area';
+        if (latInput) latInput.value = lat;
+        if (lngInput) lngInput.value = lng;
+        if (statusEl) {
+          statusEl.innerHTML = `<span class="text-emerald-700 font-semibold">📍 Network Location (${city}): ${lat}, ${lng}</span>`;
+        }
+        showToast(`📍 Approximate coordinates detected via network (${city})`, 'info');
+        return;
+      }
+    }
+  } catch (e) {}
+
+  if (statusEl) {
+    statusEl.innerHTML = `<span class="text-slate-500">Tap "Pick on Map" to pinpoint property.</span>`;
+  }
 }
 
 // Map Pin Picker State
@@ -6303,10 +6327,56 @@ function panPickerMap(lat, lng, name) {
   if (statusEl) statusEl.textContent = `📍 ${name}`;
 }
 
+async function fallbackNetworkLocation(targetStatusEl, reason = 'GPS unavailable') {
+  if (targetStatusEl) targetStatusEl.textContent = '🌐 Estimating via network IP...';
+
+  // Attempt 1: GeoJS
+  try {
+    const res = await fetch('https://get.geojs.io/v1/ip/geo.json');
+    if (res.ok) {
+      const data = await res.json();
+      if (data && data.latitude && data.longitude) {
+        const lat = parseFloat(data.latitude);
+        const lng = parseFloat(data.longitude);
+        const city = data.city || data.region || 'Local Region';
+        panPickerMap(lat, lng, `${city} (Network IP)`);
+        if (targetStatusEl) targetStatusEl.textContent = `📍 ${city} (Estimated via Network)`;
+        showToast(`📍 Pinned to ${city} via network (${reason})`, 'info');
+        return { lat, lng, city };
+      }
+    }
+  } catch (e) {}
+
+  // Attempt 2: ipapi
+  try {
+    const res = await fetch('https://ipapi.co/json/');
+    if (res.ok) {
+      const data = await res.json();
+      if (data && data.latitude && data.longitude) {
+        const lat = parseFloat(data.latitude);
+        const lng = parseFloat(data.longitude);
+        const city = data.city || data.region || 'Local Region';
+        panPickerMap(lat, lng, `${city} (Network IP)`);
+        if (targetStatusEl) targetStatusEl.textContent = `📍 ${city} (Estimated via Network)`;
+        showToast(`📍 Pinned to ${city} via network`, 'info');
+        return { lat, lng, city };
+      }
+    }
+  } catch (e) {}
+
+  // Attempt 3: Default Bengaluru region center
+  panPickerMap(12.9716, 77.5946, 'Bengaluru Center (Default)');
+  if (targetStatusEl) targetStatusEl.textContent = '📍 Bengaluru Center (Drag pin to parcel)';
+  showToast('📍 Pinned to region center. Drag the pin or select a quick area above.', 'info');
+  return { lat: 12.9716, lng: 77.5946, city: 'Bengaluru' };
+}
+
 function detectGPSInsidePicker() {
   const statusEl = document.getElementById('picker-geocode-status');
+
   if (!navigator.geolocation) {
-    if (statusEl) statusEl.textContent = 'GPS not supported';
+    if (statusEl) statusEl.textContent = 'GPS not supported by browser';
+    fallbackNetworkLocation(statusEl, 'Browser lacks GPS');
     return;
   }
 
@@ -6316,14 +6386,25 @@ function detectGPSInsidePicker() {
     (pos) => {
       const lat = pos.coords.latitude;
       const lng = pos.coords.longitude;
-      panPickerMap(lat, lng, 'My Location');
-      showToast('📍 Pin moved to your current GPS position');
+      panPickerMap(lat, lng, 'My GPS Location');
+      showToast('📍 Pin moved to your exact GPS coordinates!', 'success');
+      if (statusEl) statusEl.textContent = '✓ GPS Locked (' + lat.toFixed(5) + ', ' + lng.toFixed(5) + ')';
     },
     (err) => {
-      if (statusEl) statusEl.textContent = 'GPS permission denied';
-      showToast('⚠️ GPS location unavailable');
+      let reason = 'GPS unavailable';
+      if (err.code === 1) { // PERMISSION_DENIED
+        reason = 'Permission blocked';
+        showToast('📍 Browser location is blocked. Falling back to your network location... (Tap 🔒 in browser URL bar to allow location)', 'info');
+      } else if (err.code === 2) {
+        reason = 'Signal unavailable';
+        showToast('📍 Device GPS signal unavailable. Using network location...', 'info');
+      } else if (err.code === 3) {
+        reason = 'Timed out';
+        showToast('📍 GPS timed out. Using network location...', 'info');
+      }
+      fallbackNetworkLocation(statusEl, reason);
     },
-    { enableHighAccuracy: true, timeout: 8000 }
+    { enableHighAccuracy: true, timeout: 6000, maximumAge: 60000 }
   );
 }
 
