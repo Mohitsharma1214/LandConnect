@@ -16,7 +16,8 @@ from starlette.websockets import WebSocket, WebSocketDisconnect
 
 from database import (
     init_db, get_connection, DATABASE_URL,
-    is_user_blocked, get_blocked_user_ids, block_contact_db, unblock_contact_db, create_report_db
+    is_user_blocked, get_blocked_user_ids, block_contact_db, unblock_contact_db, create_report_db,
+    load_blocked_cache
 )
 from auth import register_user, login_user, decode_jwt_token, get_user_profile, create_jwt_token
 from seed_data import seed_listings
@@ -40,6 +41,7 @@ def serialize_dict(d: dict) -> dict:
 if DATABASE_URL:
     try:
         init_db()
+        load_blocked_cache()
         seed_listings()
     except Exception as e:
         print("Warning during DB initialization:", e)
@@ -48,6 +50,22 @@ FRONTEND_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "fronten
 
 # WebSocket connection registry: user_id -> set of WebSocket connections
 active_connections = {}
+
+# Deduplication cache: temp_id -> timestamp (prevents duplicate messages from rapid double-clicks / WS+HTTP overlap)
+recent_msg_temp_ids = {}
+
+def is_duplicate_temp_id(temp_id: str) -> bool:
+    if not temp_id:
+        return False
+    now = time.time()
+    # Prune temp_ids older than 60 seconds
+    stale = [k for k, ts in recent_msg_temp_ids.items() if now - ts > 60]
+    for k in stale:
+        recent_msg_temp_ids.pop(k, None)
+    if temp_id in recent_msg_temp_ids:
+        return True
+    recent_msg_temp_ids[temp_id] = now
+    return False
 
 async def register_ws(user_id, websocket: WebSocket):
     try:
@@ -842,7 +860,6 @@ async def api_send_message(request):
     if is_blocked:
         return JSONResponse({"error": "Cannot send message. Contact is blocked."}, status_code=403)
 
-    # 1. INSTANT DISPATCH TO RECEIVER (0ms delay - do not wait for DB network latency!)
     is_self = (sender_id == receiver_id)
     instant_msg = {
         "id": temp_id,
@@ -866,6 +883,12 @@ async def api_send_message(request):
         "contact_phone": data.get("contact_phone"),
         "contact_bio": data.get("contact_bio")
     }
+
+    # Deduplication guard: if this message was already dispatched/persisted (e.g. via WebSocket), do not duplicate
+    if is_duplicate_temp_id(temp_id):
+        return JSONResponse(instant_msg)
+
+    # 1. INSTANT DISPATCH TO RECEIVER (0ms delay - do not wait for DB network latency!)
     if not is_self:
         await send_to_user(receiver_id, {
             "type": "new_message",
@@ -1133,15 +1156,25 @@ async def websocket_signaling(websocket: WebSocket):
                 if not authenticated_user_id:
                     continue
                 try:
+                    auth_uid = int(authenticated_user_id)
                     receiver_id = int(data.get("receiver_id"))
                     content = data.get("content", "").strip()
                     message_type = data.get("message_type", "text")
                     listing_id = data.get("listing_id")
                     temp_id = data.get("tempId") or f"msg_{uuid.uuid4().hex[:12]}"
-                    is_self = (receiver_id == authenticated_user_id)
+                    is_self = (receiver_id == auth_uid)
 
-                    # Check if contact is blocked
-                    if not is_self and await asyncio.to_thread(is_user_blocked, authenticated_user_id, receiver_id):
+                    # Deduplication guard: if already processed within 60s, just ack and skip
+                    if is_duplicate_temp_id(temp_id):
+                        await websocket.send_text(json.dumps({
+                            "type": "message_sent_ack",
+                            "tempId": temp_id,
+                            "is_read": 1 if is_self else 0
+                        }))
+                        continue
+
+                    # Check if contact is blocked (in-memory 0ms)
+                    if not is_self and is_user_blocked(auth_uid, receiver_id):
                         await websocket.send_text(json.dumps({
                             "type": "chat_error",
                             "tempId": temp_id,
@@ -1152,7 +1185,7 @@ async def websocket_signaling(websocket: WebSocket):
                     instant_msg = {
                         "id": temp_id,
                         "tempId": temp_id,
-                        "sender_id": authenticated_user_id,
+                        "sender_id": auth_uid,
                         "receiver_id": receiver_id,
                         "listing_id": listing_id,
                         "content": content,
@@ -1187,7 +1220,7 @@ async def websocket_signaling(websocket: WebSocket):
                     }))
 
                     # 3. Async DB write without blocking
-                    asyncio.create_task(persist_chat_message_async(authenticated_user_id, receiver_id, listing_id, content, message_type, temp_id))
+                    asyncio.create_task(persist_chat_message_async(auth_uid, receiver_id, listing_id, content, message_type, temp_id))
                 except Exception as e:
                     print("WS chat_message error:", e)
 

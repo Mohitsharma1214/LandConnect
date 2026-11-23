@@ -346,22 +346,38 @@ def init_db():
     cursor.close()
     conn.close()
 
-def is_user_blocked(user_a: int, user_b: int) -> bool:
-    """Check if either user_a blocked user_b or user_b blocked user_a"""
-    conn = get_connection()
+# --- In-Memory Blocked Users Cache (0ms latency for real-time messaging) ---
+_blocked_pairs_cache = None
+
+def load_blocked_cache():
+    global _blocked_pairs_cache
     try:
-        cursor = conn.cursor()
-        cursor.execute("""
-            SELECT 1 FROM blocked_users 
-            WHERE (blocker_id = %s AND blocked_id = %s)
-               OR (blocker_id = %s AND blocked_id = %s)
-            LIMIT 1;
-        """, (int(user_a), int(user_b), int(user_b), int(user_a)))
-        blocked = cursor.fetchone() is not None
-        cursor.close()
-        return blocked
-    finally:
-        conn.close()
+        conn = get_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("SELECT blocker_id, blocked_id FROM blocked_users;")
+            pairs = set()
+            for row in cursor.fetchall():
+                pairs.add((int(row["blocker_id"]), int(row["blocked_id"])))
+            cursor.close()
+            _blocked_pairs_cache = pairs
+        finally:
+            conn.close()
+    except Exception as e:
+        print("Failed to initialize blocked cache from DB:", e)
+        if _blocked_pairs_cache is None:
+            _blocked_pairs_cache = set()
+
+def is_user_blocked(user_a: int, user_b: int) -> bool:
+    """Check if either user_a blocked user_b or user_b blocked user_a (in-memory 0ms)"""
+    global _blocked_pairs_cache
+    if _blocked_pairs_cache is None:
+        load_blocked_cache()
+    try:
+        ua, ub = int(user_a), int(user_b)
+        return (ua, ub) in _blocked_pairs_cache or (ub, ua) in _blocked_pairs_cache
+    except Exception:
+        return False
 
 def get_blocked_user_ids(user_id: int) -> list[int]:
     """Get list of user IDs that user_id has blocked"""
@@ -376,6 +392,9 @@ def get_blocked_user_ids(user_id: int) -> list[int]:
         conn.close()
 
 def block_contact_db(blocker_id: int, blocked_id: int) -> bool:
+    global _blocked_pairs_cache
+    if _blocked_pairs_cache is not None:
+        _blocked_pairs_cache.add((int(blocker_id), int(blocked_id)))
     conn = get_connection()
     try:
         cursor = conn.cursor()
@@ -391,6 +410,9 @@ def block_contact_db(blocker_id: int, blocked_id: int) -> bool:
         conn.close()
 
 def unblock_contact_db(blocker_id: int, blocked_id: int) -> bool:
+    global _blocked_pairs_cache
+    if _blocked_pairs_cache is not None:
+        _blocked_pairs_cache.discard((int(blocker_id), int(blocked_id)))
     conn = get_connection()
     try:
         cursor = conn.cursor()

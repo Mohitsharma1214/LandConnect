@@ -1908,7 +1908,13 @@ function updateChatPeerStatusUI() {
 
 let chatSyncInterval = null;
 
+let isStartingChatLock = false;
+
 async function startChatWithUser(userId, name, avatar, role, listingId = null) {
+  if (isStartingChatLock) return;
+  isStartingChatLock = true;
+  setTimeout(() => { isStartingChatLock = false; }, 800);
+
   const targetId = Number(userId);
   const myId = currentUser ? Number(currentUser.id) : 0;
   const isSelf = (myId > 0 && targetId === myId);
@@ -1995,16 +2001,20 @@ async function startChatWithUser(userId, name, avatar, role, listingId = null) {
     renderContactsList();
   }
 
-  await fetchChatMessages(targetId);
+  // INSTANT TAB SWITCH TO CHAT (0ms delay - immediate feedback!)
   switchTab('chats');
   if (window.lucide) lucide.createIcons();
 
+  // If a listing was clicked from the feed, dispatch property inquiry immediately (0ms)
   if (listingId && !isSelf) {
     const listing = allListings.find(l => String(l.id) === String(listingId));
     if (listing) {
-      await sendPropertyInquiryForListing(listing);
+      sendPropertyInquiryForListing(listing);
     }
   }
+
+  // Concurrently fetch message history in background without blocking the UI
+  fetchChatMessages(targetId);
 
   // Background active sync polling
   clearInterval(chatSyncInterval);
@@ -2603,6 +2613,7 @@ async function sendContactCardToUser(recipientId, recipientName, recipientAvatar
   }
 
   // 5. Instant WebSocket dispatch
+  let wsSent = false;
   if (ws && ws.readyState === WebSocket.OPEN) {
     try {
       ws.send(JSON.stringify({
@@ -2619,13 +2630,14 @@ async function sendContactCardToUser(recipientId, recipientName, recipientAvatar
         contact_bio: shared.bio || 'Available on LandConnect',
         sender_name: currentUser ? currentUser.name : ''
       }));
+      wsSent = true;
     } catch (e) {
       console.error('WS contact share error:', e);
     }
   }
 
-  // 6. Persist to Neon DB
-  if (currentToken) {
+  // 6. Persist fallback to Neon DB only if WS was not connected
+  if (!wsSent && currentToken) {
     try {
       await fetch(`${API_BASE}/api/messages`, {
         method: 'POST',
@@ -2634,6 +2646,7 @@ async function sendContactCardToUser(recipientId, recipientName, recipientAvatar
           'Authorization': `Bearer ${currentToken}`
         },
         body: JSON.stringify({
+          tempId: tempId,
           receiver_id: targetId,
           content: contactText,
           message_type: 'contact_card',
@@ -2643,12 +2656,11 @@ async function sendContactCardToUser(recipientId, recipientName, recipientAvatar
           contact_avatar: shared.avatar,
           contact_phone: shared.phone_masked,
           contact_bio: shared.bio || 'Available on LandConnect',
-          tempId: tempId,
           sender_name: currentUser ? currentUser.name : ''
         })
       });
     } catch (e) {
-      console.error('API contact share error:', e);
+      console.warn('Failed fallback contact share persist:', e);
     }
   }
 
@@ -3336,8 +3348,13 @@ function hideAttachmentMenu() {
   if (menu) menu.classList.add('hidden');
 }
 
+let isSendingInquiryLock = false;
+
 async function sendPropertyInquiryForListing(item, customMessage = null) {
   if (!item || !activeChatPeer || !currentToken) return;
+  if (isSendingInquiryLock) return;
+  isSendingInquiryLock = true;
+  setTimeout(() => { isSendingInquiryLock = false; }, 1000);
 
   const targetPeerId = Number(activeChatPeer.id);
   const myId = currentUser ? Number(currentUser.id) : 0;
@@ -3405,54 +3422,49 @@ async function sendPropertyInquiryForListing(item, customMessage = null) {
   }
   renderContactsList();
 
-  // 1. Instant WebSocket dispatch
+  const inquiryPayload = {
+    type: 'chat_message',
+    tempId: tempId,
+    receiver_id: targetPeerId,
+    listing_id: item.id,
+    content: inquiryText,
+    message_type: 'property_inquiry',
+    listing_title: item.title,
+    listing_price: item.price,
+    listing_images: item.images,
+    sender_name: currentUser ? currentUser.name : '',
+    sender_avatar: currentUser ? currentUser.avatar : ''
+  };
+
+  // 1. Instant WebSocket dispatch (0ms to receiver!)
+  let wsSent = false;
   if (ws && ws.readyState === WebSocket.OPEN) {
     try {
-      ws.send(JSON.stringify({
-        type: 'chat_message',
-        tempId: tempId,
-        receiver_id: targetPeerId,
-        listing_id: item.id,
-        content: inquiryText,
-        message_type: 'property_inquiry',
-        listing_title: item.title,
-        listing_price: item.price,
-        listing_images: item.images,
-        sender_name: currentUser ? currentUser.name : '',
-        sender_avatar: currentUser ? currentUser.avatar : ''
-      }));
+      ws.send(JSON.stringify(inquiryPayload));
+      wsSent = true;
     } catch (e) {
       console.warn('WS send property inquiry error:', e);
     }
   }
 
-  // 2. HTTP persistence
-  try {
-    const res = await fetch(`${API_BASE}/api/messages`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${currentToken}`
-      },
-      body: JSON.stringify({
-        tempId: tempId,
-        receiver_id: targetPeerId,
-        listing_id: item.id,
-        content: inquiryText,
-        message_type: 'property_inquiry',
-        listing_title: item.title,
-        listing_price: item.price,
-        listing_images: item.images,
-        sender_name: currentUser ? currentUser.name : '',
-        sender_avatar: currentUser ? currentUser.avatar : ''
-      })
-    });
-    const savedMsg = await res.json();
-    if (savedMsg.id) {
-      updateMessageStatus(tempId, savedMsg.id);
+  // 2. HTTP persistence fallback ONLY if WebSocket wasn't connected
+  if (!wsSent) {
+    try {
+      const res = await fetch(`${API_BASE}/api/messages`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${currentToken}`
+        },
+        body: JSON.stringify(inquiryPayload)
+      });
+      const savedMsg = await res.json();
+      if (savedMsg.id) {
+        updateMessageStatus(tempId, savedMsg.id);
+      }
+    } catch (err) {
+      console.error('Error sending listing fallback:', err);
     }
-  } catch (err) {
-    console.error('Error attaching listing:', err);
   }
 }
 
@@ -3497,6 +3509,7 @@ async function createMeetingRoom() {
   chatMessagesCache.get(targetPeerId).push(optimisticMsg);
 
   // 1. Instant WebSocket dispatch
+  let wsSent = false;
   if (ws && ws.readyState === WebSocket.OPEN) {
     try {
       ws.send(JSON.stringify({
@@ -3509,28 +3522,31 @@ async function createMeetingRoom() {
         sender_name: currentUser ? currentUser.name : '',
         sender_avatar: currentUser ? currentUser.avatar : ''
       }));
+      wsSent = true;
     } catch (e) {}
   }
 
-  // 2. HTTP persistence
-  try {
-    fetch(`${API_BASE}/api/messages`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${currentToken}`
-      },
-      body: JSON.stringify({
-        tempId: tempId,
-        receiver_id: activeChatPeer.id,
-        content: meetingMsg,
-        message_type: 'meeting',
-        sender_name: currentUser ? currentUser.name : '',
-        sender_avatar: currentUser ? currentUser.avatar : ''
-      })
-    });
-  } catch (err) {
-    console.error('Error creating meeting room:', err);
+  // 2. HTTP persistence fallback only if WS wasn't connected
+  if (!wsSent && currentToken) {
+    try {
+      fetch(`${API_BASE}/api/messages`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${currentToken}`
+        },
+        body: JSON.stringify({
+          tempId: tempId,
+          receiver_id: activeChatPeer.id,
+          content: meetingMsg,
+          message_type: 'meeting',
+          sender_name: currentUser ? currentUser.name : '',
+          sender_avatar: currentUser ? currentUser.avatar : ''
+        })
+      });
+    } catch (err) {
+      console.error('Error creating meeting room fallback:', err);
+    }
   }
 
   // Launch multi-party meeting room immediately for sender
@@ -3821,6 +3837,7 @@ async function stopAndSendVoiceRecording() {
   chatMessagesCache.get(targetPeerId).push(optimisticMsg);
 
       // 1. Instant WebSocket dispatch
+      let wsSent = false;
       if (ws && ws.readyState === WebSocket.OPEN) {
         try {
           ws.send(JSON.stringify({
@@ -3832,32 +3849,35 @@ async function stopAndSendVoiceRecording() {
             sender_name: currentUser ? currentUser.name : '',
             sender_avatar: currentUser ? currentUser.avatar : ''
           }));
+          wsSent = true;
         } catch (e) {}
       }
 
-      // 2. HTTP persistence
-      try {
-        const res = await fetch(`${API_BASE}/api/messages`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${currentToken}`
-          },
-          body: JSON.stringify({
-            tempId: tempId,
-            receiver_id: activeChatPeer.id,
-            content: base64Audio,
-            message_type: 'audio',
-            sender_name: currentUser ? currentUser.name : '',
-            sender_avatar: currentUser ? currentUser.avatar : ''
-          })
-        });
-        const savedMsg = await res.json();
-        if (savedMsg.id) {
-          updateMessageStatus(tempId, savedMsg.id);
+      // 2. HTTP persistence fallback only if WS was not connected
+      if (!wsSent && currentToken) {
+        try {
+          const res = await fetch(`${API_BASE}/api/messages`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${currentToken}`
+            },
+            body: JSON.stringify({
+              tempId: tempId,
+              receiver_id: activeChatPeer.id,
+              content: base64Audio,
+              message_type: 'audio',
+              sender_name: currentUser ? currentUser.name : '',
+              sender_avatar: currentUser ? currentUser.avatar : ''
+            })
+          });
+          const savedMsg = await res.json();
+          if (savedMsg.id) {
+            updateMessageStatus(tempId, savedMsg.id);
+          }
+        } catch (err) {
+          console.error('Error sending audio message fallback:', err);
         }
-      } catch (err) {
-        console.error('Error sending audio message:', err);
       }
     };
 
@@ -5127,6 +5147,8 @@ async function sendMeetingInviteToUser(targetUserId) {
   chatMessagesCache.get(targetId).push(optimisticMsg);
 
   // Send over WebSocket immediately (0ms)
+  // Send over WebSocket immediately (0ms)
+  let wsSent = false;
   if (ws && ws.readyState === WebSocket.OPEN) {
     try {
       ws.send(JSON.stringify({
@@ -5139,27 +5161,30 @@ async function sendMeetingInviteToUser(targetUserId) {
         sender_name: currentUser.name,
         sender_avatar: currentUser.avatar
       }));
+      wsSent = true;
     } catch(e) {}
   }
 
-  // Persist over HTTP
-  try {
-    fetch(`${API_BASE}/api/messages`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${currentToken}`
-      },
-      body: JSON.stringify({
-        tempId: tempId,
-        receiver_id: targetUser.id,
-        content: meetingMsg,
-        message_type: 'meeting',
-        sender_name: currentUser.name,
-        sender_avatar: currentUser.avatar
-      })
-    });
-  } catch (e) {}
+  // Persist fallback over HTTP only if WS not available
+  if (!wsSent && currentToken) {
+    try {
+      fetch(`${API_BASE}/api/messages`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${currentToken}`
+        },
+        body: JSON.stringify({
+          tempId: tempId,
+          receiver_id: targetUser.id,
+          content: meetingMsg,
+          message_type: 'meeting',
+          sender_name: currentUser.name,
+          sender_avatar: currentUser.avatar
+        })
+      });
+    } catch (e) {}
+  }
 
   // Update button UI
   const btn = document.getElementById(`btn-invite-user-${targetUser.id}`);
