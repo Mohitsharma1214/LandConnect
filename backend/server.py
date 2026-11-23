@@ -207,6 +207,31 @@ async def broadcast_user_status(user_id, status: str):
     except Exception as e:
         print("broadcast_user_status error:", e)
 
+async def broadcast_all(message: dict, exclude_user_id=None):
+    try:
+        ex_id = int(exclude_user_id) if exclude_user_id is not None else None
+    except Exception:
+        ex_id = None
+    try:
+        msg_json = json.dumps(message)
+        dead_sockets = set()
+        for uid, conns in list(active_connections.items()):
+            try:
+                if ex_id is not None and int(uid) == ex_id:
+                    continue
+            except Exception:
+                pass
+            for ws in list(conns):
+                try:
+                    await ws.send_text(msg_json)
+                except Exception:
+                    dead_sockets.add(ws)
+        if dead_sockets:
+            for s in active_connections.values():
+                s.difference_update(dead_sockets)
+    except Exception as e:
+        print("broadcast_all error:", e)
+
 def db_save_message(sender_id, receiver_id, listing_id, content, message_type):
     conn = get_connection()
     try:
@@ -665,8 +690,34 @@ async def api_create_listing(request):
             """, (title, description, price, area_sqft, property_type, location_address, city, state, latitude, longitude, images, features, owner_id))
             listing_id = cursor.fetchone()["id"]
             conn.commit()
+
+            # Fetch the complete listing with owner details for instant real-time broadcast
+            cursor.execute("""
+                SELECT l.*, u.name as owner_name, u.role as owner_role, u.phone_masked as owner_phone, u.avatar as owner_avatar
+                FROM listings l
+                JOIN users u ON l.owner_id = u.id
+                WHERE l.id = %s
+            """, (listing_id,))
+            row = cursor.fetchone()
+            new_listing = None
+            if row:
+                d = serialize_dict(dict(row))
+                raw_imgs = json.loads(d["images"]) if isinstance(d["images"], str) else (d["images"] or [])
+                clean_imgs = []
+                for img in raw_imgs:
+                    if "/uploads/land_" in img:
+                        clean_imgs.append(f"/bucket/{img.split('/uploads/')[1]}")
+                    else:
+                        clean_imgs.append(img)
+                d["images"] = clean_imgs
+                d["features"] = json.loads(d["features"]) if isinstance(d["features"], str) else (d["features"] or [])
+                new_listing = d
             cursor.close()
-            return JSONResponse({"success": True, "id": listing_id, "message": "Land listing created successfully."})
+
+            if new_listing:
+                asyncio.create_task(broadcast_all({"type": "new_listing", "listing": new_listing}))
+
+            return JSONResponse({"success": True, "id": listing_id, "listing": new_listing, "message": "Land listing created successfully."})
         finally:
             conn.close()
     except Exception as e:
@@ -748,9 +799,35 @@ async def api_update_listing(request):
             WHERE id = %s
         """, (title, description, price, area_sqft, property_type, location_address, latitude, longitude, images, listing_id))
         conn.commit()
+
+        cursor.execute("""
+            SELECT l.*, u.name as owner_name, u.role as owner_role, u.phone_masked as owner_phone, u.avatar as owner_avatar
+            FROM listings l
+            JOIN users u ON l.owner_id = u.id
+            WHERE l.id = %s
+        """, (listing_id,))
+        updated_row = cursor.fetchone()
+        updated_listing = None
+        if updated_row:
+            d = serialize_dict(dict(updated_row))
+            raw_imgs = json.loads(d["images"]) if isinstance(d["images"], str) else (d["images"] or [])
+            clean_imgs = []
+            for img in raw_imgs:
+                if "/uploads/land_" in img:
+                    clean_imgs.append(f"/bucket/{img.split('/uploads/')[1]}")
+                else:
+                    clean_imgs.append(img)
+            d["images"] = clean_imgs
+            d["features"] = json.loads(d["features"]) if isinstance(d["features"], str) else (d["features"] or [])
+            updated_listing = d
+
         cursor.close()
         conn.close()
-        return JSONResponse({"success": True, "message": "Listing updated successfully."})
+
+        if updated_listing:
+            asyncio.create_task(broadcast_all({"type": "listing_updated", "listing": updated_listing}))
+
+        return JSONResponse({"success": True, "listing": updated_listing, "message": "Listing updated successfully."})
     except Exception as e:
         cursor.close()
         conn.close()
@@ -782,6 +859,9 @@ async def api_delete_listing(request):
     conn.commit()
     cursor.close()
     conn.close()
+
+    asyncio.create_task(broadcast_all({"type": "listing_deleted", "listing_id": listing_id}))
+
     return JSONResponse({"success": True, "message": "Listing deleted successfully."})
 
 async def api_get_messages(request):

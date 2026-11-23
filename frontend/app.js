@@ -5886,6 +5886,100 @@ function initWebSocket() {
         case 'pong':
           break;
 
+        case 'new_listing': {
+          const listing = data.listing;
+          if (!listing || !listing.id) break;
+
+          // Check if already in allListings to avoid duplicate
+          const existingIdx = allListings.findIndex(l => String(l.id) === String(listing.id));
+          if (existingIdx >= 0) {
+            allListings[existingIdx] = listing;
+          } else {
+            allListings.unshift(listing);
+          }
+
+          // If feed is currently active, re-render immediately
+          if (activeTab === 'feed') {
+            if (typeof isFilteringSaved !== 'undefined' && isFilteringSaved) {
+              filterSavedListings();
+            } else {
+              filterListings();
+            }
+          }
+
+          // Update map parcel counter and list
+          renderMapParcelsSelector();
+          if (activeTab === 'map') {
+            if (typeof initInteractiveLandMap === 'function') {
+              initInteractiveLandMap();
+            }
+          }
+
+          // If current user is seller/broker and they own this listing, refresh their dashboard if open
+          const myId = currentUser ? Number(currentUser.id) : null;
+          const ownerId = listing.owner_id ? Number(listing.owner_id) : null;
+          if (myId && ownerId && myId === ownerId) {
+            if (typeof loadMyListings === 'function') {
+              loadMyListings();
+            }
+          } else if (myId && ownerId && myId !== ownerId) {
+            // Show friendly notification banner/toast to buyers and other users
+            showToast(`New land parcel listed: ${listing.title}`, 'info');
+          }
+          break;
+        }
+
+        case 'listing_updated': {
+          const listing = data.listing;
+          if (!listing || !listing.id) break;
+
+          const idx = allListings.findIndex(l => String(l.id) === String(listing.id));
+          if (idx >= 0) {
+            allListings[idx] = listing;
+          } else {
+            allListings.unshift(listing);
+          }
+
+          if (activeTab === 'feed') {
+            if (typeof isFilteringSaved !== 'undefined' && isFilteringSaved) {
+              filterSavedListings();
+            } else {
+              filterListings();
+            }
+          }
+          renderMapParcelsSelector();
+          if (activePropertyDetailListing && String(activePropertyDetailListing.id) === String(listing.id)) {
+            openPropertyDetails(listing.id);
+          }
+          if (selectedMapListing && String(selectedMapListing.id) === String(listing.id)) {
+            updateMapCard(listing);
+          }
+          break;
+        }
+
+        case 'listing_deleted': {
+          const lid = data.listing_id;
+          if (!lid) break;
+
+          allListings = allListings.filter(l => String(l.id) !== String(lid));
+          if (activeTab === 'feed') {
+            if (typeof isFilteringSaved !== 'undefined' && isFilteringSaved) {
+              filterSavedListings();
+            } else {
+              filterListings();
+            }
+          }
+          renderMapParcelsSelector();
+          if (activePropertyDetailListing && String(activePropertyDetailListing.id) === String(lid)) {
+            closePropertyDetails();
+            showToast('This listing has been removed by the owner.', 'warning');
+          }
+          if (activeTab === 'map' && typeof initInteractiveLandMap === 'function') {
+            initInteractiveLandMap();
+          }
+          break;
+        }
+
         case 'new_message': {
           const msg = data.message;
           if (!msg) break;
