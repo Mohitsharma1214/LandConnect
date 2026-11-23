@@ -132,6 +132,7 @@ let isVideoMuted = false;
 let myBlockedUserIds = new Set();
 let targetContactForBlockAction = null;
 let targetContactForReportAction = null;
+let targetContactForClearChatAction = null;
 
 // --- Multi-Party Meeting Room State ---
 let currentMeetingRoomId = null;
@@ -2183,13 +2184,10 @@ function renderContactProfileUI(user, isLoadingListings = false) {
   if (btnVideo) btnVideo.classList.toggle('opacity-40', isBlocked);
   if (btnMeet) btnMeet.classList.toggle('opacity-40', isBlocked);
 
-  if (modCard) {
-    if (isSelf) {
-      modCard.classList.add('hidden');
-    } else {
-      modCard.classList.remove('hidden');
-    }
-  }
+  const btnReport = document.getElementById('cp-btn-report');
+  if (btnBlock) btnBlock.classList.toggle('hidden', isSelf);
+  if (btnReport) btnReport.classList.toggle('hidden', isSelf);
+  if (modCard) modCard.classList.remove('hidden');
 
   // 3. About & Phone Number
   const bioEl = document.getElementById('cp-bio');
@@ -2927,23 +2925,89 @@ function toggleChatOptionsMenu() {
   if (window.lucide) lucide.createIcons();
 }
 
+function handleClearChatFromProfile() {
+  if (!currentViewingContact) return;
+  openClearChatModal(currentViewingContact);
+}
+
 function clearCurrentChatMessages() {
   if (!activeChatPeer) return;
-  if (!confirm(`Clear all messages with ${activeChatPeer.name}?`)) return;
-  chatMessagesCache.delete(Number(activeChatPeer.id));
-  const container = document.getElementById('chat-messages-container');
-  if (container) {
-    container.innerHTML = `
-      <div class="text-center py-8 text-slate-400 text-xs">
-        <div class="inline-block bg-white/70 backdrop-blur-sm px-3.5 py-1.5 rounded-xl shadow-xs text-slate-500 font-medium">
-          Messages cleared.
-        </div>
-      </div>
-    `;
+  openClearChatModal(activeChatPeer);
+}
+
+function openClearChatModal(contact) {
+  if (!contact) return;
+  targetContactForClearChatAction = contact;
+  const modal = document.getElementById('clear-chat-modal');
+  const nameEl = document.getElementById('clear-chat-modal-name');
+  if (nameEl) nameEl.textContent = contact.name || 'this contact';
+
+  if (modal) {
+    modal.classList.remove('hidden');
+    modal.style.zIndex = '3100';
   }
-  const countEl = document.getElementById('chat-peer-msg-count');
-  if (countEl) countEl.textContent = '0 messages';
-  showToast('Messages cleared', 'info');
+  if (window.lucide) lucide.createIcons();
+}
+
+function closeClearChatModal() {
+  const modal = document.getElementById('clear-chat-modal');
+  if (modal) modal.classList.add('hidden');
+  targetContactForClearChatAction = null;
+}
+
+async function confirmClearChatAction() {
+  if (!targetContactForClearChatAction) return;
+  const contact = targetContactForClearChatAction;
+  const targetId = Number(contact.id);
+  closeClearChatModal();
+
+  try {
+    const res = await fetch(`${API_BASE}/api/messages/${targetId}`, {
+      method: 'DELETE',
+      headers: { 'Authorization': `Bearer ${currentToken}` }
+    });
+    if (res.ok) {
+      chatMessagesCache.delete(targetId);
+
+      // If viewing active chat with this contact, update messages view immediately
+      if (activeChatPeer && Number(activeChatPeer.id) === targetId) {
+        const container = document.getElementById('chat-messages-container');
+        if (container) {
+          container.innerHTML = `
+            <div class="text-center py-8 text-slate-400 text-xs">
+              <div class="inline-block bg-white/70 backdrop-blur-sm px-3.5 py-1.5 rounded-xl shadow-xs text-slate-500 font-medium">
+                Messages cleared.
+              </div>
+            </div>
+          `;
+        }
+        const countEl = document.getElementById('chat-peer-msg-count');
+        if (countEl) countEl.textContent = '0 messages';
+      }
+
+      // If contact profile is currently open, update media stats
+      const mediaStats = document.getElementById('cp-media-stats');
+      if (mediaStats && currentViewingContact && Number(currentViewingContact.id) === targetId) {
+        mediaStats.textContent = '0 messages • 0 meeting rooms';
+      }
+
+      // Update conversations list preview
+      const conv = recentConversations.find(c => Number(c.peer_id) === targetId);
+      if (conv) {
+        conv.last_message = 'Messages cleared';
+        conv.last_message_type = 'text';
+        conv.unread_count = 0;
+        renderContactsList();
+      }
+
+      showToast(`Chat with ${contact.name || 'contact'} cleared`, 'info');
+    } else {
+      const err = await res.json();
+      showToast(err.error || 'Failed to clear chat', 'error');
+    }
+  } catch (e) {
+    showToast('Failed to clear chat. Please check connection.', 'error');
+  }
 }
 
 async function fetchChatMessages(otherUserId) {

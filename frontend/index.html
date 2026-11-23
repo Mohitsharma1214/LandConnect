@@ -1178,8 +1178,12 @@
             </button>
           </div>
 
-          <!-- 5. Block & Report Actions -->
+          <!-- 5. Chat Actions (Clear Chat, Block, Report) -->
           <div id="cp-moderation-card" class="bg-white rounded-2xl shadow-xs border border-slate-200/80 p-2 space-y-1">
+            <button onclick="handleClearChatFromProfile()" id="cp-btn-clear-chat" class="w-full text-left px-3 py-2.5 rounded-xl hover:bg-slate-100 text-slate-700 font-bold text-xs flex items-center gap-2.5 transition">
+              <i data-lucide="trash-2" class="w-4 h-4 text-slate-500"></i>
+              <span>Clear Chat</span>
+            </button>
             <button onclick="handleBlockContact()" id="cp-btn-block" class="w-full text-left px-3 py-2.5 rounded-xl hover:bg-rose-50 text-rose-600 font-bold text-xs flex items-center gap-2.5 transition">
               <i data-lucide="ban" id="cp-block-icon" class="w-4 h-4"></i>
               <span id="cp-block-label">Block Contact</span>
@@ -2461,6 +2465,29 @@
           </button>
           <button type="button" onclick="submitReportContactAction()" class="py-2 px-3 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs shadow-md transition">
             Submit Report
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ================= CLEAR CHAT CONFIRMATION MODAL ================= -->
+    <div id="clear-chat-modal" class="hidden absolute inset-0 bg-slate-950/80 backdrop-blur-xs flex items-center justify-center p-4 z-[3100]">
+      <div class="bg-white rounded-3xl p-5 w-full max-w-sm text-center shadow-2xl border border-slate-100 space-y-4">
+        <div class="w-14 h-14 rounded-full mx-auto flex items-center justify-center bg-rose-100 text-rose-600">
+          <i data-lucide="trash-2" class="w-7 h-7"></i>
+        </div>
+        <div>
+          <h3 class="font-bold text-base text-slate-800">Clear chat with <span id="clear-chat-modal-name">Contact</span>?</h3>
+          <p class="text-xs text-slate-500 mt-1.5 leading-relaxed">
+            All messages in this conversation will be permanently deleted for you and this contact. This action cannot be undone.
+          </p>
+        </div>
+        <div class="grid grid-cols-2 gap-2 pt-1">
+          <button type="button" onclick="closeClearChatModal()" class="py-2.5 px-4 rounded-xl border border-slate-200 text-slate-600 font-semibold text-xs hover:bg-slate-50 transition">
+            Cancel
+          </button>
+          <button type="button" onclick="confirmClearChatAction()" class="py-2.5 px-4 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs shadow-md transition">
+            Clear Chat
           </button>
         </div>
       </div>

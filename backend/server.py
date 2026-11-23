@@ -733,6 +733,34 @@ async def api_get_messages(request):
         asyncio.create_task(send_to_user(other_user_id, {"type": "messages_seen", "reader_id": my_id}))
     return JSONResponse(rows)
 
+async def api_clear_messages(request):
+    other_user_id = int(request.path_params["user_id"])
+    auth_header = request.headers.get("Authorization", "")
+    token = auth_header.replace("Bearer ", "") if "Bearer " in auth_header else auth_header
+    payload = decode_jwt_token(token)
+    if not payload:
+        return JSONResponse({"error": "Unauthorized."}, status_code=401)
+    
+    my_id = int(payload["sub"])
+
+    def clear_db():
+        conn = get_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("""
+                DELETE FROM messages
+                WHERE (sender_id = %s AND receiver_id = %s)
+                   OR (sender_id = %s AND receiver_id = %s);
+            """, (my_id, other_user_id, other_user_id, my_id))
+            conn.commit()
+            cursor.close()
+            return True
+        finally:
+            conn.close()
+
+    await asyncio.to_thread(clear_db)
+    return JSONResponse({"success": True, "message": "Chat cleared successfully."})
+
 async def api_conversations(request):
     auth_header = request.headers.get("Authorization", "")
     token = auth_header.replace("Bearer ", "") if "Bearer " in auth_header else auth_header
@@ -1455,6 +1483,7 @@ routes = [
     Route("/api/listings/{id:int}", api_update_listing, methods=["PUT"]),
     Route("/api/listings/{id:int}", api_delete_listing, methods=["DELETE"]),
     Route("/api/messages/{user_id:int}", api_get_messages, methods=["GET"]),
+    Route("/api/messages/{user_id:int}", api_clear_messages, methods=["DELETE"]),
     Route("/api/messages", api_send_message, methods=["POST"]),
     Route("/api/conversations", api_conversations, methods=["GET"]),
     Route("/api/calls/history", api_call_logs, methods=["GET"]),
