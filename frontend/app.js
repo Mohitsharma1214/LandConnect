@@ -1908,6 +1908,23 @@ function updateChatPeerStatusUI() {
 
 let chatSyncInterval = null;
 
+function getStoredChatMessages(peerId) {
+  try {
+    const raw = localStorage.getItem(`landconnect_chat_${peerId}`);
+    return raw ? JSON.parse(raw) : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+function setStoredChatMessages(peerId, msgs) {
+  try {
+    if (Array.isArray(msgs)) {
+      localStorage.setItem(`landconnect_chat_${peerId}`, JSON.stringify(msgs.slice(-50)));
+    }
+  } catch (e) {}
+}
+
 let isStartingChatLock = false;
 
 async function startChatWithUser(userId, name, avatar, role, listingId = null) {
@@ -1961,30 +1978,33 @@ async function startChatWithUser(userId, name, avatar, role, listingId = null) {
   updateChatBlockedStatusUI();
   updateFloatingTypingUI();
 
-  // Instant render: if cached, show immediately with 0ms delay; otherwise show clean encrypted state
-  if (chatMessagesCache.has(targetId)) {
-    const cached = chatMessagesCache.get(targetId);
-    renderChatMessages(cached);
+  // Instant render: check memory cache first, then localStorage (0ms zero latency)
+  let initialMessages = chatMessagesCache.get(targetId);
+  if (!initialMessages) {
+    const stored = getStoredChatMessages(targetId);
+    if (stored && Array.isArray(stored)) {
+      initialMessages = stored;
+      chatMessagesCache.set(targetId, stored);
+    }
+  }
+
+  if (initialMessages && initialMessages.length > 0) {
+    renderChatMessages(initialMessages);
     if (countEl) {
-      countEl.textContent = `${cached.length} ${cached.length === 1 ? 'message' : 'messages'}`;
+      countEl.textContent = `${initialMessages.length} ${initialMessages.length === 1 ? 'message' : 'messages'}`;
     }
   } else {
     if (messagesContainer) {
       messagesContainer.innerHTML = `
-        <div class="text-center py-8 text-slate-400 text-xs">
+        <div id="chat-empty-placeholder" class="text-center py-6 text-slate-400 text-xs">
           <div class="inline-block bg-white/70 backdrop-blur-sm px-3.5 py-1.5 rounded-xl shadow-xs text-slate-500 font-medium">
             🔒 Messages and calls are end-to-end encrypted within LandConnect.
-          </div>
-          <div class="flex items-center justify-center gap-1.5 mt-4 text-emerald-600">
-            <span class="w-2 h-2 rounded-full bg-wa-teal animate-bounce"></span>
-            <span class="w-2 h-2 rounded-full bg-wa-teal animate-bounce [animation-delay:0.15s]"></span>
-            <span class="w-2 h-2 rounded-full bg-wa-teal animate-bounce [animation-delay:0.3s]"></span>
           </div>
         </div>
       `;
     }
     if (countEl) {
-      countEl.textContent = '...';
+      countEl.textContent = '0 messages';
     }
   }
 
@@ -2988,6 +3008,7 @@ async function confirmClearChatAction() {
     });
     if (res.ok) {
       chatMessagesCache.delete(targetId);
+      try { localStorage.removeItem(`landconnect_chat_${targetId}`); } catch(e){}
 
       // If viewing active chat with this contact, update messages view immediately
       if (activeChatPeer && Number(activeChatPeer.id) === targetId) {
@@ -3043,6 +3064,7 @@ async function fetchChatMessages(otherUserId) {
 
     // Cache the messages for instant zero-latency retrieval
     chatMessagesCache.set(targetId, messages);
+    setStoredChatMessages(targetId, messages);
 
     // Only render if user is still actively looking at this conversation
     if (activeChatPeer && Number(activeChatPeer.id) === targetId) {
@@ -3308,7 +3330,7 @@ function appendMessageToChat(m, isPending = false) {
   const container = document.getElementById('chat-messages-container');
   if (!container) return;
 
-  const placeholder = container.querySelector('.text-center.py-6');
+  const placeholder = container.querySelector('#chat-empty-placeholder') || container.querySelector('.text-center');
   if (placeholder) {
     placeholder.remove();
   }
@@ -3324,8 +3346,8 @@ function renderChatMessages(messages) {
 
   if (messages.length === 0) {
     container.innerHTML = `
-      <div class="text-center py-6 text-slate-400 text-xs">
-        <div class="inline-block bg-white/70 backdrop-blur-sm px-3 py-1.5 rounded-xl shadow-sm text-slate-500">
+      <div id="chat-empty-placeholder" class="text-center py-6 text-slate-400 text-xs">
+        <div class="inline-block bg-white/70 backdrop-blur-sm px-3.5 py-1.5 rounded-xl shadow-xs text-slate-500 font-medium">
           🔒 Messages and calls are end-to-end encrypted within LandConnect. Personal contact details are protected.
         </div>
       </div>

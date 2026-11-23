@@ -68,6 +68,45 @@ def is_duplicate_temp_id(temp_id: str) -> bool:
     recent_msg_temp_ids[temp_id] = now
     return False
 
+# In-memory recent messages cache: (user_min, user_max) -> list of message dicts
+server_messages_cache = {}
+server_messages_cache_ts = {}
+
+def get_cached_messages(u1: int, u2: int):
+    key = (min(int(u1), int(u2)), max(int(u1), int(u2)))
+    if key in server_messages_cache and (time.time() - server_messages_cache_ts.get(key, 0) < 6.0):
+        return server_messages_cache[key]
+    return None
+
+def set_cached_messages(u1: int, u2: int, msgs: list):
+    key = (min(int(u1), int(u2)), max(int(u1), int(u2)))
+    server_messages_cache[key] = msgs
+    server_messages_cache_ts[key] = time.time()
+
+def invalidate_cached_messages(u1: int, u2: int):
+    key = (min(int(u1), int(u2)), max(int(u1), int(u2)))
+    server_messages_cache.pop(key, None)
+    server_messages_cache_ts.pop(key, None)
+
+def append_to_cached_messages(u1: int, u2: int, msg: dict):
+    key = (min(int(u1), int(u2)), max(int(u1), int(u2)))
+    if key in server_messages_cache:
+        server_messages_cache[key].append(msg)
+        server_messages_cache_ts[key] = time.time()
+
+def db_mark_read_async(sender_id: int, receiver_id: int):
+    try:
+        conn = get_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("UPDATE messages SET is_read = 1 WHERE sender_id = %s AND receiver_id = %s AND is_read = 0", (sender_id, receiver_id))
+            conn.commit()
+            cursor.close()
+        finally:
+            conn.close()
+    except Exception as e:
+        print("db_mark_read_async error:", e)
+
 async def register_ws(user_id, websocket: WebSocket):
     try:
         u_id = int(user_id)
@@ -169,6 +208,7 @@ def db_save_message(sender_id, receiver_id, listing_id, content, message_type):
 
 async def persist_chat_message_async(sender_id, receiver_id, listing_id, content, message_type, temp_id):
     try:
+        invalidate_cached_messages(sender_id, receiver_id)
         loop = asyncio.get_event_loop()
         msg_id, _ = await loop.run_in_executor(None, db_save_message, sender_id, receiver_id, listing_id, content, message_type)
         if msg_id:
@@ -711,7 +751,14 @@ async def api_get_messages(request):
     if not payload:
         return JSONResponse({"error": "Unauthorized."}, status_code=401)
     
-    my_id = payload["sub"]
+    my_id = int(payload["sub"])
+
+    # 1. Instant cache return (<1ms zero latency)
+    cached = get_cached_messages(my_id, other_user_id)
+    if cached is not None:
+        if other_user_id != my_id:
+            asyncio.create_task(send_to_user(other_user_id, {"type": "messages_seen", "reader_id": my_id}))
+        return JSONResponse(cached)
 
     def fetch_msgs():
         conn = get_connection()
@@ -742,15 +789,18 @@ async def api_get_messages(request):
                     except Exception:
                         d["listing_images"] = []
                 rows.append(d)
-            # Always mark unread messages from other_user_id to my_id as read when opening chat
-            cursor.execute("UPDATE messages SET is_read = 1 WHERE sender_id = %s AND receiver_id = %s AND is_read = 0", (other_user_id, my_id))
-            conn.commit()
             cursor.close()
-            return rows
+            return rows, has_unread
         finally:
             conn.close()
 
-    rows = await asyncio.to_thread(fetch_msgs)
+    rows, has_unread = await asyncio.to_thread(fetch_msgs)
+    set_cached_messages(my_id, other_user_id, rows)
+
+    # Mark unread asynchronously without delaying response
+    if has_unread:
+        asyncio.create_task(asyncio.to_thread(db_mark_read_async, other_user_id, my_id))
+
     if other_user_id != my_id:
         asyncio.create_task(send_to_user(other_user_id, {"type": "messages_seen", "reader_id": my_id}))
     return JSONResponse(rows)
@@ -764,6 +814,7 @@ async def api_clear_messages(request):
         return JSONResponse({"error": "Unauthorized."}, status_code=401)
     
     my_id = int(payload["sub"])
+    invalidate_cached_messages(my_id, other_user_id)
 
     def clear_db():
         conn = get_connection()

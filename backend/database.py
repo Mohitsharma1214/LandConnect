@@ -178,6 +178,9 @@ def init_db():
         created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
         is_read INTEGER DEFAULT 0
     );
+    CREATE INDEX IF NOT EXISTS idx_messages_pair ON messages (sender_id, receiver_id);
+    CREATE INDEX IF NOT EXISTS idx_messages_rev_pair ON messages (receiver_id, sender_id);
+    CREATE INDEX IF NOT EXISTS idx_messages_created ON messages (created_at);
     """)
 
     # Call Logs Table
