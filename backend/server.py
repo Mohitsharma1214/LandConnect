@@ -3,6 +3,7 @@ import json
 import asyncio
 import base64
 import uuid
+import time
 from decimal import Decimal
 from datetime import datetime, timezone
 
@@ -86,7 +87,7 @@ async def unregister_ws(user_id, websocket: WebSocket):
     except Exception:
         pass
 
-async def send_to_user(user_id, message: dict):
+async def send_to_user(user_id, message: dict, exclude_ws: WebSocket = None):
     targets = set()
     try:
         u_int = int(user_id)
@@ -100,6 +101,9 @@ async def send_to_user(user_id, message: dict):
             targets.update(active_connections[u_str])
     except Exception:
         pass
+
+    if exclude_ws and exclude_ws in targets:
+        targets.discard(exclude_ws)
 
     if targets:
         dead_sockets = set()
@@ -889,7 +893,12 @@ async def api_send_message(request):
         return JSONResponse(instant_msg)
 
     # 1. INSTANT DISPATCH TO RECEIVER (0ms delay - do not wait for DB network latency!)
-    if not is_self:
+    if is_self:
+        await send_to_user(sender_id, {
+            "type": "new_message",
+            "message": instant_msg
+        })
+    else:
         await send_to_user(receiver_id, {
             "type": "new_message",
             "message": instant_msg
@@ -1206,7 +1215,13 @@ async def websocket_signaling(websocket: WebSocket):
                     }
 
                     # 1. INSTANT DISPATCH TO RECEIVER OVER WS (0ms)
-                    if not is_self:
+                    if is_self:
+                        # For self-chat, deliver to other open tabs/windows of this user
+                        await send_to_user(auth_uid, {
+                            "type": "new_message",
+                            "message": instant_msg
+                        }, exclude_ws=websocket)
+                    else:
                         await send_to_user(receiver_id, {
                             "type": "new_message",
                             "message": instant_msg
