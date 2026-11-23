@@ -28,8 +28,8 @@ A complete, production-grade functional prototype of a mobile-first real estate 
 | # | Deliverable | Status | Location / Reference |
 |:---:|---|:---:|---|
 | **1** | **GitHub Repository** | ✅ Ready | [https://github.com/Mohitsharma1214/LandConnect](https://github.com/Mohitsharma1214/LandConnect) |
-| **2** | **Working Application Demo** | ✅ Ready | Local server: `http://localhost:8000` (Instructions below) |
-| **3** | **Demonstration Video** | ✅ Outlined | Video walkthrough covering WebRTC Calling & Real-Time Sync |
+| **2** | **Working Application Demo** | ✅ Live Hosted | [https://landconnect-kzel.onrender.com/](https://landconnect-kzel.onrender.com/) |
+| **3** | **Demonstration Video** | ✅ Available | [Google Drive Video Walkthrough](https://drive.google.com/drive/folders/1xqKsfr0yStV3zTKQIP5GZIoGkTZ3_616?usp=sharing) |
 | **4** | **Technical Documentation** | ✅ Detailed | [TECHNICAL_DOCUMENTATION.md](file:///home/mohitsharma/Documents/Landconnect/TECHNICAL_DOCUMENTATION.md) |
 | **5** | **AI Tools Usage Summary** | ✅ Comprehensive | [AI_TOOLS_USAGE_SUMMARY.md](file:///home/mohitsharma/Documents/Landconnect/AI_TOOLS_USAGE_SUMMARY.md) |
 
