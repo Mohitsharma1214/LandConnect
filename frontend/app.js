@@ -128,6 +128,11 @@ let callSeconds = 0;
 let isAudioMuted = false;
 let isVideoMuted = false;
 
+// --- Moderation & Trust State (Blocked & Reported Contacts) ---
+let myBlockedUserIds = new Set();
+let targetContactForBlockAction = null;
+let targetContactForReportAction = null;
+
 // --- Multi-Party Meeting Room State ---
 let currentMeetingRoomId = null;
 let currentNewRoomId = null;
@@ -1418,6 +1423,9 @@ function formatChatTime(isoString) {
 }
 
 async function loadUsersList() {
+  if (currentToken) {
+    fetchBlockedUsers();
+  }
   if (allUsers.length === 0) {
     renderContactsSkeleton();
   }
@@ -1943,6 +1951,7 @@ async function startChatWithUser(userId, name, avatar, role, listingId = null) {
   }
 
   updateChatPeerStatusUI();
+  updateChatBlockedStatusUI();
   updateFloatingTypingUI();
 
   // Instant render: if cached, show immediately with 0ms delay; otherwise show clean encrypted state
@@ -2148,6 +2157,32 @@ function renderContactProfileUI(user, isLoadingListings = false) {
 
   // Moderation card (Block & Report) - strictly DO NOT show on self profile
   const modCard = document.getElementById('cp-moderation-card');
+  const isBlocked = myBlockedUserIds.has(Number(user.id));
+  const blockedBanner = document.getElementById('cp-blocked-banner');
+  const blockLabel = document.getElementById('cp-block-label');
+  const blockIcon = document.getElementById('cp-block-icon');
+  const btnBlock = document.getElementById('cp-btn-block');
+
+  if (blockedBanner) {
+    blockedBanner.classList.toggle('hidden', isSelf || !isBlocked);
+  }
+  if (blockLabel) {
+    blockLabel.textContent = isBlocked ? 'Unblock Contact' : 'Block Contact';
+  }
+  if (blockIcon) {
+    blockIcon.setAttribute('data-lucide', isBlocked ? 'unlock' : 'ban');
+  }
+  if (btnBlock) {
+    if (isBlocked) {
+      btnBlock.className = 'w-full text-left px-3 py-2.5 rounded-xl hover:bg-emerald-50 text-emerald-700 font-bold text-xs flex items-center gap-2.5 transition';
+    } else {
+      btnBlock.className = 'w-full text-left px-3 py-2.5 rounded-xl hover:bg-rose-50 text-rose-600 font-bold text-xs flex items-center gap-2.5 transition';
+    }
+  }
+  if (btnAudio) btnAudio.classList.toggle('opacity-40', isBlocked);
+  if (btnVideo) btnVideo.classList.toggle('opacity-40', isBlocked);
+  if (btnMeet) btnMeet.classList.toggle('opacity-40', isBlocked);
+
   if (modCard) {
     if (isSelf) {
       modCard.classList.add('hidden');
@@ -2651,16 +2686,264 @@ function toggleMuteContact() {
 
 function handleBlockContact() {
   if (!currentViewingContact) return;
-  const name = currentViewingContact.name;
-  showToast(`Contact ${name} blocked`, 'info');
-  closeContactProfile();
+  const uid = Number(currentViewingContact.id);
+  const name = currentViewingContact.name || 'Contact';
+  if (myBlockedUserIds.has(uid)) {
+    unblockContact(uid, name);
+  } else {
+    openBlockContactModal(currentViewingContact);
+  }
+}
+
+function handleChatBlockToggle() {
+  if (!activeChatPeer) return;
+  const uid = Number(activeChatPeer.id);
+  const name = activeChatPeer.name || 'Contact';
+  if (myBlockedUserIds.has(uid)) {
+    unblockContact(uid, name);
+  } else {
+    openBlockContactModal(activeChatPeer);
+  }
+}
+
+function openBlockContactModal(contact) {
+  if (!contact) return;
+  targetContactForBlockAction = contact;
+  const modal = document.getElementById('block-contact-modal');
+  const nameEl = document.getElementById('block-modal-name');
+  const avatarEl = document.getElementById('block-modal-avatar');
+  const chkReport = document.getElementById('block-modal-report-checkbox');
+
+  if (nameEl) nameEl.textContent = contact.name || 'Contact';
+  if (avatarEl) {
+    avatarEl.src = contact.avatar || getInitialsAvatar(contact.name, contact.role);
+  }
+  if (chkReport) chkReport.checked = false;
+
+  if (modal) {
+    modal.classList.remove('hidden');
+    modal.style.zIndex = '3100';
+  }
+  if (window.lucide) lucide.createIcons();
+}
+
+function closeBlockContactModal() {
+  const modal = document.getElementById('block-contact-modal');
+  if (modal) modal.classList.add('hidden');
+  targetContactForBlockAction = null;
+}
+
+async function confirmBlockContactAction() {
+  if (!targetContactForBlockAction) return;
+  const contact = targetContactForBlockAction;
+  const chkReport = document.getElementById('block-modal-report-checkbox');
+  const alsoReport = chkReport ? chkReport.checked : false;
+
+  closeBlockContactModal();
+  await blockContact(contact.id, contact.name, alsoReport);
 }
 
 function handleReportContact() {
   if (!currentViewingContact) return;
-  const name = currentViewingContact.name;
-  showToast(`Report submitted for ${name}`, 'info');
-  closeContactProfile();
+  openReportModalForContact(currentViewingContact);
+}
+
+function openReportModalForContact(contact) {
+  if (!contact) return;
+  targetContactForReportAction = contact;
+  const modal = document.getElementById('report-contact-modal');
+  const subEl = document.getElementById('report-modal-subtitle');
+  const detailsEl = document.getElementById('report-modal-details');
+  const chkBlock = document.getElementById('report-modal-also-block');
+
+  if (subEl) subEl.textContent = `Report ${contact.name || 'User'}`;
+  if (detailsEl) detailsEl.value = '';
+  if (chkBlock) chkBlock.checked = true;
+
+  if (modal) {
+    modal.classList.remove('hidden');
+    modal.style.zIndex = '3100';
+  }
+  if (window.lucide) lucide.createIcons();
+}
+
+function closeReportContactModal() {
+  const modal = document.getElementById('report-contact-modal');
+  if (modal) modal.classList.add('hidden');
+  targetContactForReportAction = null;
+}
+
+async function submitReportContactAction() {
+  if (!targetContactForReportAction) return;
+  const contact = targetContactForReportAction;
+  const selectedRadio = document.querySelector('input[name="report_reason"]:checked');
+  const reason = selectedRadio ? selectedRadio.value : 'Inappropriate behavior';
+  const detailsEl = document.getElementById('report-modal-details');
+  const details = detailsEl ? detailsEl.value.trim() : '';
+  const chkBlock = document.getElementById('report-modal-also-block');
+  const alsoBlock = chkBlock ? chkBlock.checked : true;
+
+  closeReportContactModal();
+
+  try {
+    const res = await fetch(`${API_BASE}/api/reports`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${currentToken}`
+      },
+      body: JSON.stringify({
+        reported_id: Number(contact.id),
+        reason: reason,
+        details: details,
+        also_block: alsoBlock
+      })
+    });
+    if (res.ok) {
+      if (alsoBlock) {
+        myBlockedUserIds.add(Number(contact.id));
+        updateChatBlockedStatusUI();
+        if (currentViewingContact && Number(currentViewingContact.id) === Number(contact.id)) {
+          renderContactProfileUI(currentViewingContact);
+        }
+      }
+      showToast(`Report submitted for ${contact.name}. Thank you for keeping LandConnect safe.`, 'info');
+    } else {
+      const err = await res.json();
+      showToast(err.error || 'Failed to submit report', 'error');
+    }
+  } catch (e) {
+    showToast('Failed to submit report. Please check connection.', 'error');
+  }
+}
+
+async function blockContact(userId, name, alsoReport = false) {
+  const uid = Number(userId);
+  try {
+    const res = await fetch(`${API_BASE}/api/blocks/${uid}`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${currentToken}` }
+    });
+    if (res.ok) {
+      myBlockedUserIds.add(uid);
+      showToast(`${name || 'Contact'} has been blocked`, 'info');
+      updateChatBlockedStatusUI();
+      if (currentViewingContact && Number(currentViewingContact.id) === uid) {
+        renderContactProfileUI(currentViewingContact);
+      }
+      if (alsoReport) {
+        openReportModalForContact({ id: uid, name });
+      }
+    } else {
+      const err = await res.json();
+      showToast(err.error || 'Failed to block contact', 'error');
+    }
+  } catch (e) {
+    showToast('Failed to block contact', 'error');
+  }
+}
+
+async function unblockContact(userId, name) {
+  const uid = Number(userId);
+  try {
+    const res = await fetch(`${API_BASE}/api/blocks/${uid}`, {
+      method: 'DELETE',
+      headers: { 'Authorization': `Bearer ${currentToken}` }
+    });
+    if (res.ok) {
+      myBlockedUserIds.delete(uid);
+      showToast(`${name || 'Contact'} has been unblocked`, 'info');
+      updateChatBlockedStatusUI();
+      if (currentViewingContact && Number(currentViewingContact.id) === uid) {
+        renderContactProfileUI(currentViewingContact);
+      }
+    } else {
+      const err = await res.json();
+      showToast(err.error || 'Failed to unblock contact', 'error');
+    }
+  } catch (e) {
+    showToast('Failed to unblock contact', 'error');
+  }
+}
+
+async function fetchBlockedUsers() {
+  if (!currentToken) return;
+  try {
+    const res = await fetch(`${API_BASE}/api/blocks`, {
+      headers: { 'Authorization': `Bearer ${currentToken}` }
+    });
+    if (res.ok) {
+      const data = await res.json();
+      if (Array.isArray(data.blocked_ids)) {
+        myBlockedUserIds = new Set(data.blocked_ids.map(Number));
+        updateChatBlockedStatusUI();
+      }
+    }
+  } catch (e) {
+    console.error('Error fetching blocked users:', e);
+  }
+}
+
+function updateChatBlockedStatusUI() {
+  if (!activeChatPeer) return;
+  const targetId = Number(activeChatPeer.id);
+  const isBlocked = myBlockedUserIds.has(targetId);
+
+  const blockedBanner = document.getElementById('chat-blocked-banner');
+  const inputRow = document.getElementById('chat-input-row');
+  const attachBtn = document.getElementById('btn-chat-attach');
+  const btnMeet = document.getElementById('btn-chat-meet-header');
+  const btnVideo = document.getElementById('btn-chat-video-header');
+  const btnAudio = document.getElementById('btn-chat-audio-header');
+  const optBlockText = document.getElementById('chat-opt-block-text');
+  const optBlockIcon = document.getElementById('chat-opt-block-icon');
+
+  if (isBlocked) {
+    if (blockedBanner) blockedBanner.classList.remove('hidden');
+    if (inputRow) inputRow.classList.add('hidden');
+    if (attachBtn) attachBtn.classList.add('hidden');
+    if (btnMeet) btnMeet.classList.add('opacity-40', 'pointer-events-none');
+    if (btnVideo) btnVideo.classList.add('opacity-40', 'pointer-events-none');
+    if (btnAudio) btnAudio.classList.add('opacity-40', 'pointer-events-none');
+    if (optBlockText) optBlockText.textContent = 'Unblock contact';
+    if (optBlockIcon) optBlockIcon.setAttribute('data-lucide', 'unlock');
+  } else {
+    if (blockedBanner) blockedBanner.classList.add('hidden');
+    if (inputRow) inputRow.classList.remove('hidden');
+    if (attachBtn) attachBtn.classList.remove('hidden');
+    if (btnMeet) btnMeet.classList.remove('opacity-40', 'pointer-events-none');
+    if (btnVideo) btnVideo.classList.remove('opacity-40', 'pointer-events-none');
+    if (btnAudio) btnAudio.classList.remove('opacity-40', 'pointer-events-none');
+    if (optBlockText) optBlockText.textContent = 'Block contact';
+    if (optBlockIcon) optBlockIcon.setAttribute('data-lucide', 'ban');
+  }
+  if (window.lucide) lucide.createIcons();
+}
+
+function toggleChatOptionsMenu() {
+  const menu = document.getElementById('chat-options-menu');
+  if (!menu) return;
+  menu.classList.toggle('hidden');
+  if (window.lucide) lucide.createIcons();
+}
+
+function clearCurrentChatMessages() {
+  if (!activeChatPeer) return;
+  if (!confirm(`Clear all messages with ${activeChatPeer.name}?`)) return;
+  chatMessagesCache.delete(Number(activeChatPeer.id));
+  const container = document.getElementById('chat-messages-container');
+  if (container) {
+    container.innerHTML = `
+      <div class="text-center py-8 text-slate-400 text-xs">
+        <div class="inline-block bg-white/70 backdrop-blur-sm px-3.5 py-1.5 rounded-xl shadow-xs text-slate-500 font-medium">
+          Messages cleared.
+        </div>
+      </div>
+    `;
+  }
+  const countEl = document.getElementById('chat-peer-msg-count');
+  if (countEl) countEl.textContent = '0 messages';
+  showToast('Messages cleared', 'info');
 }
 
 async function fetchChatMessages(otherUserId) {
@@ -4009,6 +4292,10 @@ async function initiateDirectCall(targetUserId, targetName, targetAvatar, target
   }
   if (targetUserId === currentUser.id) {
     showToast('Cannot call yourself.', 'warning');
+    return;
+  }
+  if (myBlockedUserIds.has(Number(targetUserId))) {
+    showToast('You have blocked this contact. Unblock to make calls.', 'warning');
     return;
   }
 
@@ -5565,6 +5852,26 @@ function initWebSocket() {
           if (data.tempId) {
             updateMessageStatus(data.tempId, data.tempId);
           }
+          break;
+        }
+
+        case 'contact_blocked_update': {
+          if (data.blockedByMe) {
+            if (data.isBlocked) {
+              myBlockedUserIds.add(Number(data.peerId));
+            } else {
+              myBlockedUserIds.delete(Number(data.peerId));
+            }
+          }
+          updateChatBlockedStatusUI();
+          if (currentViewingContact && Number(currentViewingContact.id) === Number(data.peerId)) {
+            renderContactProfileUI(currentViewingContact);
+          }
+          break;
+        }
+
+        case 'chat_error': {
+          showToast(data.message || 'Message cannot be sent. Contact is blocked.', 'error');
           break;
         }
 

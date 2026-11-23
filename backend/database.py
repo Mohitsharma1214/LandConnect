@@ -223,6 +223,28 @@ def init_db():
     cursor.execute("""
     CREATE INDEX IF NOT EXISTS idx_messages_conv ON messages (sender_id, receiver_id, created_at);
     CREATE INDEX IF NOT EXISTS idx_messages_rev ON messages (receiver_id, sender_id, created_at);
+
+    -- Blocked Contacts Table
+    CREATE TABLE IF NOT EXISTS blocked_users (
+        id SERIAL PRIMARY KEY,
+        blocker_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        blocked_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT unique_blocker_blocked UNIQUE(blocker_id, blocked_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_blocker_id ON blocked_users (blocker_id);
+    CREATE INDEX IF NOT EXISTS idx_blocked_id ON blocked_users (blocked_id);
+
+    -- User Trust & Safety Reports Table
+    CREATE TABLE IF NOT EXISTS user_reports (
+        id SERIAL PRIMARY KEY,
+        reporter_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        reported_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        reason VARCHAR(100) NOT NULL,
+        details TEXT DEFAULT '',
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_reported_id ON user_reports (reported_id);
     """)
 
     conn.commit()
@@ -323,6 +345,80 @@ def init_db():
 
     cursor.close()
     conn.close()
+
+def is_user_blocked(user_a: int, user_b: int) -> bool:
+    """Check if either user_a blocked user_b or user_b blocked user_a"""
+    conn = get_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT 1 FROM blocked_users 
+            WHERE (blocker_id = %s AND blocked_id = %s)
+               OR (blocker_id = %s AND blocked_id = %s)
+            LIMIT 1;
+        """, (int(user_a), int(user_b), int(user_b), int(user_a)))
+        blocked = cursor.fetchone() is not None
+        cursor.close()
+        return blocked
+    finally:
+        conn.close()
+
+def get_blocked_user_ids(user_id: int) -> list[int]:
+    """Get list of user IDs that user_id has blocked"""
+    conn = get_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT blocked_id FROM blocked_users WHERE blocker_id = %s;", (int(user_id),))
+        ids = [row["blocked_id"] for row in cursor.fetchall()]
+        cursor.close()
+        return ids
+    finally:
+        conn.close()
+
+def block_contact_db(blocker_id: int, blocked_id: int) -> bool:
+    conn = get_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute("""
+            INSERT INTO blocked_users (blocker_id, blocked_id)
+            VALUES (%s, %s)
+            ON CONFLICT (blocker_id, blocked_id) DO NOTHING;
+        """, (int(blocker_id), int(blocked_id)))
+        conn.commit()
+        cursor.close()
+        return True
+    finally:
+        conn.close()
+
+def unblock_contact_db(blocker_id: int, blocked_id: int) -> bool:
+    conn = get_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute("""
+            DELETE FROM blocked_users 
+            WHERE blocker_id = %s AND blocked_id = %s;
+        """, (int(blocker_id), int(blocked_id)))
+        conn.commit()
+        cursor.close()
+        return True
+    finally:
+        conn.close()
+
+def create_report_db(reporter_id: int, reported_id: int, reason: str, details: str = "") -> int:
+    conn = get_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute("""
+            INSERT INTO user_reports (reporter_id, reported_id, reason, details)
+            VALUES (%s, %s, %s, %s)
+            RETURNING id;
+        """, (int(reporter_id), int(reported_id), str(reason), str(details or "")))
+        rep_id = cursor.fetchone()["id"]
+        conn.commit()
+        cursor.close()
+        return rep_id
+    finally:
+        conn.close()
 
 if __name__ == "__main__":
     init_db()

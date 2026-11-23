@@ -14,7 +14,10 @@ from starlette.middleware.cors import CORSMiddleware
 from starlette.staticfiles import StaticFiles
 from starlette.websockets import WebSocket, WebSocketDisconnect
 
-from database import init_db, get_connection, DATABASE_URL
+from database import (
+    init_db, get_connection, DATABASE_URL,
+    is_user_blocked, get_blocked_user_ids, block_contact_db, unblock_contact_db, create_report_db
+)
 from auth import register_user, login_user, decode_jwt_token, get_user_profile, create_jwt_token
 from seed_data import seed_listings
 
@@ -806,6 +809,11 @@ async def api_send_message(request):
     if not receiver_id or not content:
         return JSONResponse({"error": "Receiver and message content are required."}, status_code=400)
 
+    # Trust & Safety: Check if user is blocked
+    is_blocked = await asyncio.to_thread(is_user_blocked, sender_id, receiver_id)
+    if is_blocked:
+        return JSONResponse({"error": "Cannot send message. Contact is blocked."}, status_code=403)
+
     # 1. INSTANT DISPATCH TO RECEIVER (0ms delay - do not wait for DB network latency!)
     is_self = (sender_id == receiver_id)
     instant_msg = {
@@ -915,6 +923,115 @@ async def api_meeting_room_history(request):
     logs = await asyncio.to_thread(fetch_room_logs)
     return JSONResponse(logs)
 
+# --- Trust & Safety: Contact Blocking & Reporting ---
+
+async def api_get_blocks(request):
+    auth_header = request.headers.get("Authorization", "")
+    token = auth_header.replace("Bearer ", "") if "Bearer " in auth_header else auth_header
+    payload = decode_jwt_token(token)
+    if not payload:
+        return JSONResponse({"error": "Unauthorized."}, status_code=401)
+    user_id = payload["sub"]
+    blocked_ids = await asyncio.to_thread(get_blocked_user_ids, user_id)
+    return JSONResponse({"blocked_ids": blocked_ids})
+
+async def api_block_contact(request):
+    auth_header = request.headers.get("Authorization", "")
+    token = auth_header.replace("Bearer ", "") if "Bearer " in auth_header else auth_header
+    payload = decode_jwt_token(token)
+    if not payload:
+        return JSONResponse({"error": "Unauthorized."}, status_code=401)
+    user_id = int(payload["sub"])
+    target_id = int(request.path_params["target_id"])
+    if user_id == target_id:
+        return JSONResponse({"error": "Cannot block yourself."}, status_code=400)
+    
+    await asyncio.to_thread(block_contact_db, user_id, target_id)
+    # Real-time WebSocket sync to both blocker and blocked
+    await send_to_user(target_id, {
+        "type": "contact_blocked_update",
+        "peerId": user_id,
+        "isBlocked": True,
+        "blockedByMe": False
+    })
+    await send_to_user(user_id, {
+        "type": "contact_blocked_update",
+        "peerId": target_id,
+        "isBlocked": True,
+        "blockedByMe": True
+    })
+    return JSONResponse({"success": True, "blocked_id": target_id})
+
+async def api_unblock_contact(request):
+    auth_header = request.headers.get("Authorization", "")
+    token = auth_header.replace("Bearer ", "") if "Bearer " in auth_header else auth_header
+    payload = decode_jwt_token(token)
+    if not payload:
+        return JSONResponse({"error": "Unauthorized."}, status_code=401)
+    user_id = int(payload["sub"])
+    target_id = int(request.path_params["target_id"])
+    
+    await asyncio.to_thread(unblock_contact_db, user_id, target_id)
+    await send_to_user(target_id, {
+        "type": "contact_blocked_update",
+        "peerId": user_id,
+        "isBlocked": False,
+        "blockedByMe": False
+    })
+    await send_to_user(user_id, {
+        "type": "contact_blocked_update",
+        "peerId": target_id,
+        "isBlocked": False,
+        "blockedByMe": True
+    })
+    return JSONResponse({"success": True, "unblocked_id": target_id})
+
+async def api_report_contact(request):
+    auth_header = request.headers.get("Authorization", "")
+    token = auth_header.replace("Bearer ", "") if "Bearer " in auth_header else auth_header
+    payload = decode_jwt_token(token)
+    if not payload:
+        return JSONResponse({"error": "Unauthorized."}, status_code=401)
+    user_id = int(payload["sub"])
+    try:
+        data = await request.json()
+    except Exception:
+        data = {}
+    
+    reported_id = int(data.get("reported_id") or 0)
+    reason = str(data.get("reason", "Inappropriate behavior")).strip()
+    details = str(data.get("details", "")).strip()
+    also_block = bool(data.get("also_block", False))
+
+    if not reported_id:
+        return JSONResponse({"error": "Reported user is required."}, status_code=400)
+    if reported_id == user_id:
+        return JSONResponse({"error": "Cannot report yourself."}, status_code=400)
+
+    report_id = await asyncio.to_thread(create_report_db, user_id, reported_id, reason, details)
+
+    if also_block:
+        await asyncio.to_thread(block_contact_db, user_id, reported_id)
+        await send_to_user(reported_id, {
+            "type": "contact_blocked_update",
+            "peerId": user_id,
+            "isBlocked": True,
+            "blockedByMe": False
+        })
+        await send_to_user(user_id, {
+            "type": "contact_blocked_update",
+            "peerId": reported_id,
+            "isBlocked": True,
+            "blockedByMe": True
+        })
+
+    return JSONResponse({
+        "success": True,
+        "report_id": report_id,
+        "also_blocked": also_block,
+        "message": "Report submitted successfully."
+    })
+
 # --- Real-Time WebSocket for Signaling (Audio / Video Calls, Meeting Rooms & Live Chat) ---
 
 # Active multi-participant meeting rooms:
@@ -995,6 +1112,15 @@ async def websocket_signaling(websocket: WebSocket):
                     temp_id = data.get("tempId") or f"msg_{uuid.uuid4().hex[:12]}"
                     is_self = (receiver_id == authenticated_user_id)
 
+                    # Check if contact is blocked
+                    if not is_self and await asyncio.to_thread(is_user_blocked, authenticated_user_id, receiver_id):
+                        await websocket.send_text(json.dumps({
+                            "type": "chat_error",
+                            "tempId": temp_id,
+                            "message": "Cannot send message. Contact is blocked."
+                        }))
+                        continue
+
                     instant_msg = {
                         "id": temp_id,
                         "tempId": temp_id,
@@ -1044,6 +1170,14 @@ async def websocket_signaling(websocket: WebSocket):
                 call_type = data.get("callType", "video")
                 listing_id = data.get("listingId")
                 caller_info = data.get("callerInfo", {})
+                
+                # Check if contact is blocked
+                if await asyncio.to_thread(is_user_blocked, authenticated_user_id, receiver_id):
+                    await websocket.send_text(json.dumps({
+                        "type": "call_rejected",
+                        "reason": "Contact is unavailable"
+                    }))
+                    continue
                 
                 try:
                     u_int = int(authenticated_user_id)
@@ -1325,6 +1459,10 @@ routes = [
     Route("/api/conversations", api_conversations, methods=["GET"]),
     Route("/api/calls/history", api_call_logs, methods=["GET"]),
     Route("/api/meeting-rooms/history", api_meeting_room_history, methods=["GET"]),
+    Route("/api/blocks", api_get_blocks, methods=["GET"]),
+    Route("/api/blocks/{target_id:int}", api_block_contact, methods=["POST"]),
+    Route("/api/blocks/{target_id:int}", api_unblock_contact, methods=["DELETE"]),
+    Route("/api/reports", api_report_contact, methods=["POST"]),
     WebSocketRoute("/ws", websocket_signaling),
     Route("/bucket/{filename:path}", serve_bucket_file),
     Route("/sw.js", serve_sw),
