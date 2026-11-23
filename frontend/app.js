@@ -2926,13 +2926,21 @@ function toggleChatOptionsMenu() {
 }
 
 function handleClearChatFromProfile() {
-  if (!currentViewingContact) return;
-  openClearChatModal(currentViewingContact);
+  const contact = currentViewingContact || activeChatPeer;
+  if (!contact) {
+    showToast('No contact selected', 'info');
+    return;
+  }
+  openClearChatModal(contact);
 }
 
 function clearCurrentChatMessages() {
-  if (!activeChatPeer) return;
-  openClearChatModal(activeChatPeer);
+  const contact = activeChatPeer || currentViewingContact;
+  if (!contact) {
+    showToast('No active conversation to clear', 'info');
+    return;
+  }
+  openClearChatModal(contact);
 }
 
 function openClearChatModal(contact) {

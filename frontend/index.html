@@ -2521,12 +2521,14 @@
 
   </div>
 
-  <script src="/static/app.js"></script>
+  <script src="/static/app.js?v=2.6"></script>
   <script>
     lucide.createIcons();
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
-        navigator.serviceWorker.register('/sw.js').catch(err => console.log('SW reg error:', err));
+        navigator.serviceWorker.register('/sw.js').then(reg => {
+          reg.update();
+        }).catch(err => console.log('SW reg error:', err));
       });
     }
   </script>

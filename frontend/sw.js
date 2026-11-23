@@ -1,8 +1,6 @@
-const CACHE_NAME = 'landconnect-v2';
+const CACHE_NAME = 'landconnect-v4';
 const ASSETS_TO_CACHE = [
   '/',
-  '/static/index.html',
-  '/static/app.js',
   '/manifest.json',
   '/static/icons/icon-192.png',
   '/static/icons/icon-512.png',
@@ -33,7 +31,6 @@ self.addEventListener('activate', (event) => {
 });
 
 self.addEventListener('fetch', (event) => {
-  // Pass-through / network-first strategy
   if (event.request.method !== 'GET') return;
   const url = new URL(event.request.url);
   
@@ -42,10 +39,33 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
+  // Network-first for JavaScript, HTML, and dynamic pages
+  if (url.pathname.includes('app.js') || url.pathname.includes('.html') || url.pathname === '/') {
+    event.respondWith(
+      fetch(event.request)
+        .then((response) => {
+          if (response && response.status === 200) {
+            const copy = response.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
+          }
+          return response;
+        })
+        .catch(() => caches.match(event.request).then((res) => res || caches.match('/')))
+    );
+    return;
+  }
+
+  // Cache-first for icons and manifest
   event.respondWith(
-    fetch(event.request).catch(() => {
-      return caches.match(event.request).then((res) => res || caches.match('/'));
-    })
+    caches.match(event.request).then((cached) => {
+      return cached || fetch(event.request).then((response) => {
+        if (response && response.status === 200) {
+          const copy = response.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
+        }
+        return response;
+      });
+    }).catch(() => caches.match('/'))
   );
 });
 

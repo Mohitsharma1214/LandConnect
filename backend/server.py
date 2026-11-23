@@ -1447,14 +1447,32 @@ async def websocket_signaling(websocket: WebSocket):
 async def serve_index(request):
     index_file = os.path.join(FRONTEND_DIR, "index.html")
     if os.path.exists(index_file):
-        return FileResponse(index_file)
+        resp = FileResponse(index_file)
+        resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        resp.headers["Pragma"] = "no-cache"
+        resp.headers["Expires"] = "0"
+        return resp
     return Response("LandConnect Frontend is building...", media_type="text/plain")
 
 async def serve_sw(request):
     sw_file = os.path.join(FRONTEND_DIR, "sw.js")
     if os.path.exists(sw_file):
-        return FileResponse(sw_file, media_type="application/javascript")
+        resp = FileResponse(sw_file, media_type="application/javascript")
+        resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        resp.headers["Pragma"] = "no-cache"
+        resp.headers["Expires"] = "0"
+        return resp
     return Response("// SW not found", media_type="application/javascript")
+
+async def serve_app_js(request):
+    js_file = os.path.join(FRONTEND_DIR, "app.js")
+    if os.path.exists(js_file):
+        resp = FileResponse(js_file, media_type="application/javascript")
+        resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        resp.headers["Pragma"] = "no-cache"
+        resp.headers["Expires"] = "0"
+        return resp
+    return Response("// app.js not found", media_type="application/javascript")
 
 async def serve_manifest(request):
     m_file = os.path.join(FRONTEND_DIR, "manifest.json")
@@ -1494,6 +1512,7 @@ routes = [
     Route("/api/reports", api_report_contact, methods=["POST"]),
     WebSocketRoute("/ws", websocket_signaling),
     Route("/bucket/{filename:path}", serve_bucket_file),
+    Route("/static/app.js", serve_app_js),
     Route("/sw.js", serve_sw),
     Route("/manifest.json", serve_manifest),
     Route("/favicon.ico", serve_favicon),
