@@ -107,6 +107,10 @@ let activeTab = 'feed';
 let allListings = [];
 let activePropertyDetailListing = null;
 let allUsers = [];
+try {
+  const _savedUsers = localStorage.getItem('landconnect_users_cache');
+  if (_savedUsers) allUsers = JSON.parse(_savedUsers);
+} catch(e) {}
 let activeChatPeer = null;
 let onlineUserIds = new Set();
 let peerTypingMap = new Map(); // peerId -> timeoutId
@@ -344,6 +348,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     // If cached user exists, apply role UI instantly (zero flash)
     if (currentUser) {
       applyUserRoleUI();
+    }
+    if (allUsers.length > 0) {
+      renderContactsList();
+      renderCallsContactsList();
     }
     showMainApp();
 
@@ -729,7 +737,10 @@ function switchTab(tabId) {
     }
   });
 
-  if (tabId === 'chats') loadUsersList();
+  if (tabId === 'chats') {
+    renderContactsList();
+    loadUsersList();
+  }
   if (tabId === 'calls') fetchCallLogs();
   if (tabId === 'map') {
     renderMapParcelsSelector();
@@ -1360,6 +1371,10 @@ async function loadMyListings() {
 // ================= WHATSAPP STYLE MESSAGING & CHATS =================
 
 let recentConversations = [];
+try {
+  const _savedConvs = localStorage.getItem('landconnect_convs_cache');
+  if (_savedConvs) recentConversations = JSON.parse(_savedConvs);
+} catch(e) {}
 let chatSearchQuery = '';
 
 function getPinnedChatIds() {
@@ -1423,7 +1438,14 @@ function formatChatTime(isoString) {
   }
 }
 
-async function loadUsersList() {
+let lastUsersListFetchTime = 0;
+
+async function loadUsersList(force = false) {
+  if (!force && Date.now() - lastUsersListFetchTime < 3500) {
+    return;
+  }
+  lastUsersListFetchTime = Date.now();
+
   if (currentToken) {
     fetchBlockedUsers();
   }
@@ -1440,12 +1462,14 @@ async function loadUsersList() {
 
     allUsers = await usersRes.json();
     if (Array.isArray(allUsers)) {
+      try { localStorage.setItem('landconnect_users_cache', JSON.stringify(allUsers)); } catch(e){}
       allUsers.forEach(u => {
         if (u.is_online) onlineUserIds.add(Number(u.id));
       });
     }
     if (convRes && convRes.ok) {
       recentConversations = await convRes.json();
+      try { localStorage.setItem('landconnect_convs_cache', JSON.stringify(recentConversations)); } catch(e){}
     } else {
       recentConversations = [];
     }

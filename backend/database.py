@@ -383,16 +383,15 @@ def is_user_blocked(user_a: int, user_b: int) -> bool:
         return False
 
 def get_blocked_user_ids(user_id: int) -> list[int]:
-    """Get list of user IDs that user_id has blocked"""
-    conn = get_connection()
+    """Get list of user IDs that user_id has blocked (in-memory 0ms)"""
+    global _blocked_pairs_cache
+    if _blocked_pairs_cache is None:
+        load_blocked_cache()
     try:
-        cursor = conn.cursor()
-        cursor.execute("SELECT blocked_id FROM blocked_users WHERE blocker_id = %s;", (int(user_id),))
-        ids = [row["blocked_id"] for row in cursor.fetchall()]
-        cursor.close()
-        return ids
-    finally:
-        conn.close()
+        uid = int(user_id)
+        return [blocked for blocker, blocked in _blocked_pairs_cache if blocker == uid]
+    except Exception:
+        return []
 
 def block_contact_db(blocker_id: int, blocked_id: int) -> bool:
     global _blocked_pairs_cache

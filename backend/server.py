@@ -38,11 +38,27 @@ def serialize_dict(d: dict) -> dict:
             clean[k] = v
     return clean
 
+def load_users_cache():
+    global cached_db_users, cached_db_users_ts
+    try:
+        conn = get_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("SELECT id, name, email, role, phone_masked, avatar, bio FROM users ORDER BY id ASC")
+            cached_db_users = [serialize_dict(dict(r)) for r in cursor.fetchall()]
+            cached_db_users_ts = time.time()
+            cursor.close()
+        finally:
+            conn.close()
+    except Exception as e:
+        print("Warning pre-warming users cache:", e)
+
 # Try initializing database if DATABASE_URL is set
 if DATABASE_URL:
     try:
         init_db()
         load_blocked_cache()
+        load_users_cache()
         seed_listings()
     except Exception as e:
         print("Warning during DB initialization:", e)
@@ -93,6 +109,23 @@ def append_to_cached_messages(u1: int, u2: int, msg: dict):
     if key in server_messages_cache:
         server_messages_cache[key].append(msg)
         server_messages_cache_ts[key] = time.time()
+
+# In-memory users and conversations caches for 0ms chat list loading
+cached_db_users = None
+cached_db_users_ts = 0
+
+user_conversations_cache = {}
+user_conversations_cache_ts = {}
+
+def invalidate_user_conversations(u1: int, u2: int = None):
+    try:
+        user_conversations_cache.pop(int(u1), None)
+        user_conversations_cache_ts.pop(int(u1), None)
+        if u2 is not None:
+            user_conversations_cache.pop(int(u2), None)
+            user_conversations_cache_ts.pop(int(u2), None)
+    except Exception:
+        pass
 
 def db_mark_read_async(sender_id: int, receiver_id: int):
     try:
@@ -209,6 +242,7 @@ def db_save_message(sender_id, receiver_id, listing_id, content, message_type):
 async def persist_chat_message_async(sender_id, receiver_id, listing_id, content, message_type, temp_id):
     try:
         invalidate_cached_messages(sender_id, receiver_id)
+        invalidate_user_conversations(sender_id, receiver_id)
         loop = asyncio.get_event_loop()
         msg_id, _ = await loop.run_in_executor(None, db_save_message, sender_id, receiver_id, listing_id, content, message_type)
         if msg_id:
@@ -485,22 +519,29 @@ async def api_upload_image(request):
         return JSONResponse({"error": str(e)}, status_code=500)
 
 async def api_users(request):
-    """List available users/contacts for chat & calling"""
-    def fetch_users():
-        conn = get_connection()
-        try:
-            cursor = conn.cursor()
-            cursor.execute("SELECT id, name, email, role, phone_masked, avatar, bio FROM users ORDER BY id ASC")
-            users = []
-            for row in cursor.fetchall():
-                d = serialize_dict(dict(row))
-                d["is_online"] = (int(d["id"]) in active_connections and bool(active_connections[int(d["id"])]))
-                users.append(d)
-            cursor.close()
-            return users
-        finally:
-            conn.close()
-    users = await asyncio.to_thread(fetch_users)
+    """List available users/contacts for chat & calling (0ms in-memory cached)"""
+    global cached_db_users, cached_db_users_ts
+    now = time.time()
+    if cached_db_users is None or (now - cached_db_users_ts > 15.0):
+        def fetch_users():
+            conn = get_connection()
+            try:
+                cursor = conn.cursor()
+                cursor.execute("SELECT id, name, email, role, phone_masked, avatar, bio FROM users ORDER BY id ASC")
+                raw = [serialize_dict(dict(r)) for r in cursor.fetchall()]
+                cursor.close()
+                return raw
+            finally:
+                conn.close()
+        cached_db_users = await asyncio.to_thread(fetch_users)
+        cached_db_users_ts = now
+
+    users = []
+    for u in (cached_db_users or []):
+        d = dict(u)
+        uid = int(d["id"])
+        d["is_online"] = (uid in active_connections and bool(active_connections[uid]))
+        users.append(d)
     return JSONResponse(users)
 
 async def api_user_detail(request):
@@ -815,6 +856,7 @@ async def api_clear_messages(request):
     
     my_id = int(payload["sub"])
     invalidate_cached_messages(my_id, other_user_id)
+    invalidate_user_conversations(my_id, other_user_id)
 
     def clear_db():
         conn = get_connection()
@@ -842,6 +884,11 @@ async def api_conversations(request):
         return JSONResponse({"error": "Unauthorized."}, status_code=401)
     
     my_id = int(payload["sub"])
+    now = time.time()
+
+    # 1. 0ms instant cached return
+    if my_id in user_conversations_cache and (now - user_conversations_cache_ts.get(my_id, 0) < 6.0):
+        return JSONResponse(user_conversations_cache[my_id])
 
     def fetch_convs():
         conn = get_connection()
@@ -890,6 +937,8 @@ async def api_conversations(request):
             conn.close()
 
     rows = await asyncio.to_thread(fetch_convs)
+    user_conversations_cache[my_id] = rows
+    user_conversations_cache_ts[my_id] = now
     return JSONResponse(rows)
 
 async def api_send_message(request):
